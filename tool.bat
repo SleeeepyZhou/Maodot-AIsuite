@@ -8,6 +8,7 @@ git add .
 git commit -m "Test commit at %datetime%"
 git push
 
-cd E:\Godot\Engine\Maodot\modules\ai_suite
+cd ..
+cd .\Maodot\modules\ai_suite
 git pull
 pause
