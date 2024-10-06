@@ -1,3 +1,0 @@
-
-src_list = ["test.cpp"]
-env.add_source_files(env.modules_sources, src_list)

@@ -1,10 +1,10 @@
-#ifndef TEST_NODE_H
-#define TEST_NODE_H
+#ifndef AI_SUITE_H
+#define AI_SUITE_H
 
 #include "scene/main/node.h"
 
-class TestNode : public Node {
-	GDCLASS(TestNode, Node);
+class AISuite : public Node {
+	GDCLASS(AISuite, Node);
 
 private:
 	int count;
