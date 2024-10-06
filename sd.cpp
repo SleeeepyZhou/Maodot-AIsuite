@@ -1,4 +1,7 @@
-#include "http_request.h"
+
+#include "sd/stable-diffusion.h"
+
+#include "sd.h"
 #include "core/io/compression.h"
 #include "scene/main/timer.h"
 

@@ -1,23 +1,7 @@
 #ifndef __STABLE_DIFFUSION_H__
 #define __STABLE_DIFFUSION_H__
 
-#if defined(_WIN32) || defined(__CYGWIN__)
-#ifndef SD_BUILD_SHARED_LIB
 #define SD_API
-#else
-#ifdef SD_BUILD_DLL
-#define SD_API __declspec(dllexport)
-#else
-#define SD_API __declspec(dllimport)
-#endif
-#endif
-#else
-#if __GNUC__ >= 4
-#define SD_API __attribute__((visibility("default")))
-#else
-#define SD_API
-#endif
-#endif
 
 #ifdef __cplusplus
 extern "C" {

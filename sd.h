@@ -1,16 +1,11 @@
-#ifndef HTTP_REQUEST_H
-#define HTTP_REQUEST_H
+#ifndef SD_H
+#define SD_H
 
-#include "core/io/http_client.h"
-#include "core/io/stream_peer_gzip.h"
-#include "core/os/thread.h"
-#include "core/templates/safe_refcount.h"
-#include "scene/main/node.h"
+#include "test.h"
 
-class Timer;
 
-class HTTPRequest : public Node {
-	GDCLASS(HTTPRequest, Node);
+class SD : public TestNode {
+	GDCLASS(SD, TestNode);
 
 public:
 	enum Result {

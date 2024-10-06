@@ -3,6 +3,7 @@
 #include "model.h"
 #include "rng.hpp"
 #include "rng_philox.hpp"
+
 #include "stable-diffusion.h"
 #include "util.h"
 
@@ -18,7 +19,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
-#include "thirdparty/stb_image.h"
+#include "stb_image.h"
 
 // #define STB_IMAGE_WRITE_IMPLEMENTATION
 // #define STB_IMAGE_WRITE_STATIC
