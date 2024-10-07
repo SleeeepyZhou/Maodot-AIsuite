@@ -2,7 +2,6 @@
 option(SD_CUBLAS                     "sd: cuda backend" OFF)
 option(SD_HIPBLAS                    "sd: rocm backend" OFF)
 option(SD_FAST_SOFTMAX               "sd: x1.5 faster softmax, indeterministic (sometimes, same seed don't generate same image), cuda only" OFF)
-option(SD_VULKAN                     "sd: vulkan backend" OFF)
 option(SD_SYCL                       "sd: sycl backend" OFF)
 option(SD_FLASH_ATTN                 "sd: use flash attention for x4 less memory usage" OFF)
 
@@ -18,12 +17,6 @@ if(SD_CUBLAS)
     set(GGML_CUDA ON)
     add_definitions(-DSD_USE_CUBLAS)
 endif()
-
-if (SD_VULKAN)
-    message("-- Use Vulkan as backend stable-diffusion")
-    set(GGML_VULKAN ON)
-    add_definitions(-DSD_USE_VULKAN)
-endif ()
 
 if (SD_HIPBLAS)
     message("-- Use HIPBLAS as backend stable-diffusion")

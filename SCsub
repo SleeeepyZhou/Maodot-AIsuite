@@ -26,7 +26,6 @@ if env["builtin_aisuite"]:
 
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
 
-
     # GGML loader
 
     env_thirdparty.AppendUnique(CPPDEFINES=["GGML_MAX_NAME=128"])
@@ -45,26 +44,13 @@ if env["builtin_aisuite"]:
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-quants.c")
 
 
-    if env["platform"] == "macos":
-        print("-- Use Metal as backend stable-diffusion")
-        env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_METAL"])
-        GGML_METAL ON
+    print("-- Use Vulkan as backend stable-diffusion")
+    env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_VULKAN"])
 
-    if env["platform"] == "android":
-        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_APPLE"])
+    print("-- Use Flash Attention for memory optimization")
+    env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_FLASH_ATTENTION"])
 
-    if env["platform"] == "linuxbsd":
-        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_LINUX"])
-
-        if env["x11"]:
-            env_aisuite.AppendUnique(CPPDEFINES=["XR_USE_PLATFORM_XLIB"])
-        if env["wayland"]:
-            env_aisuite.AppendUnique(CPPDEFINES=["XR_USE_PLATFORM_WAYLAND"])
-        env_aisuite.AppendUnique(CPPDEFINES=["HAVE_SECURE_GETENV"])
-
-    if env["platform"] == "windows":
-        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_WINDOWS", "NOMINMAX", "XR_USE_PLATFORM_WIN32"])
-
+    GGML_VULKAN ON
 
     env.modules_sources += thirdparty_obj
 
