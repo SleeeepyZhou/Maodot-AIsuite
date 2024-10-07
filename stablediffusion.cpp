@@ -1,38 +1,32 @@
 
 #include "sd/stable-diffusion.h"
 
-#include "sd.h"
 #include "core/io/compression.h"
 #include "scene/main/timer.h"
 
 
-/* test.cpp */
-
-#include "test.h"
-
-TestNode::TestNode() {
-	count = 0;
+StableDiffusion::StableDiffusion() {
 }
 
-TestNode::~TestNode() {
+StableDiffusion::~StableDiffusion() {
 }
 
-void TestNode::add(int p_value) {
+void StableDiffusion::add(int p_value) {
 	count += p_value;
 }
 
-void TestNode::reset() {
+void StableDiffusion::reset() {
 	count = 0;
 }
 
-int TestNode::get_total() const {
+int StableDiffusion::get_total() const {
 	return count;
 }
 
-void TestNode::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("add", "value"), &TestNode::add);
-	ClassDB::bind_method(D_METHOD("reset"), &TestNode::reset);
-	ClassDB::bind_method(D_METHOD("get_total"), &TestNode::get_total);
+void StableDiffusion::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("add", "value"), &StableDiffusion::add);
+	ClassDB::bind_method(D_METHOD("reset"), &StableDiffusion::reset);
+	ClassDB::bind_method(D_METHOD("get_total"), &StableDiffusion::get_total);
 }
 
 
