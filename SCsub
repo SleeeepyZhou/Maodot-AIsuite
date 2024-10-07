@@ -46,9 +46,8 @@ if env["builtin_aisuite"]:
 
 
     if env["platform"] == "macos":
-        message("-- Use Metal as backend stable-diffusion")
-        env_aisuite.AppendUnique(CPPDEFINES=["DSD_USE_METAL"])
-
+        print("-- Use Metal as backend stable-diffusion")
+        env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_METAL"])
         GGML_METAL ON
 
     if env["platform"] == "android":
