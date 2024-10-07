@@ -12,29 +12,49 @@ env_aisuite.AppendUnique(CCFLAGS=['-O2'])
 # Thirdparty source files
 thirdparty_obj = []
 
-# GGML loader
 if env["builtin_aisuite"]:
     thirdparty_dir = "#thirdparty/aisuite"
-    env_ai-suit.Prepend(
+    env_aisuite.Prepend(
         CPPPATH=[
             thirdparty_dir,
-            thirdparty_dir + "/ggml/include",
         ]
     )
 
     env_thirdparty = env_aisuite.Clone()
     env_thirdparty.disable_warnings()
+    env_thirdparty.AppendUnique(CXXFLAGS=['-std=c++11'])
 
-    env_thirdparty.Append(CPPPATH=[thirdparty_dir + "/ggml/src"])
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
 
 
+    # GGML loader
+
+    env_thirdparty.AppendUnique(CPPDEFINES=["GGML_MAX_NAME=128"])
+
+    env_thirdparty.Append(
+        CPPPATH=[
+            thirdparty_dir + "/ggml/include",
+            thirdparty_dir + "/ggml/src",
+        ]
+    )
+    thirdparty_ggml_dir = thirdparty_dir + "/ggml/src"
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml.c")
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-alloc.c")
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-blas.cpp")
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-backend.c")
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-quants.c")
+
+
+    if env["platform"] == "macos":
+        message("-- Use Metal as backend stable-diffusion")
+        env_aisuite.AppendUnique(CPPDEFINES=["DSD_USE_METAL"])
+
+        GGML_METAL ON
 
     if env["platform"] == "android":
+        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_APPLE"])
 
-        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_ANDROID", "XR_USE_PLATFORM_ANDROID"])
-
-    elif env["platform"] == "linuxbsd":
+    if env["platform"] == "linuxbsd":
         env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_LINUX"])
 
         if env["x11"]:
@@ -43,30 +63,8 @@ if env["builtin_aisuite"]:
             env_aisuite.AppendUnique(CPPDEFINES=["XR_USE_PLATFORM_WAYLAND"])
         env_aisuite.AppendUnique(CPPDEFINES=["HAVE_SECURE_GETENV"])
 
-    elif env["platform"] == "windows":
+    if env["platform"] == "windows":
         env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_WINDOWS", "NOMINMAX", "XR_USE_PLATFORM_WIN32"])
-
-    elif env["platform"] == "macos":
-        env_aisuite.AppendUnique(CPPDEFINES=["XR_OS_APPLE"])
-
-    # add in load
-    if env["platform"] != "android":
-        # On Android the aisuite_loader is provided by separate plugins for each device
-        # Build the engine using object files
-        khrloader_obj = []
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/xr_generated_dispatch_table_core.c")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/common/filesystem_utils.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/common/object_info.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/api_layer_interface.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/loader_core.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/loader_instance.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/loader_logger_recorders.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/loader_logger.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/manifest_file.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/runtime_interface.cpp")
-        env_thirdparty.add_source_files(khrloader_obj, thirdparty_dir + "/src/loader/xr_generated_loader.cpp")
-        env.modules_sources += khrloader_obj
-
 
 
     env.modules_sources += thirdparty_obj
@@ -82,9 +80,6 @@ env.add_source_files(env.modules_sources, "*.cpp")
 
 Export("env_aisuite")
 SConscript("sd/SCsub")
-
-if env.editor_build:
-    SConscript("editor/SCsub")
 
 # Needed to force rebuilding the module files when the thirdparty library is updated.
 env.Depends(module_obj, thirdparty_obj)
