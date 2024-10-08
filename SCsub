@@ -13,7 +13,7 @@ env_aisuite.AppendUnique(CCFLAGS=['-O2'])
 thirdparty_obj = []
 
 if env["builtin_aisuite"]:
-    thirdparty_dir = "#thirdparty/aisuite"
+    thirdparty_dir = "aisuite"
     env_aisuite.Prepend(
         CPPPATH=[
             thirdparty_dir,
@@ -22,9 +22,9 @@ if env["builtin_aisuite"]:
 
     env_thirdparty = env_aisuite.Clone()
     env_thirdparty.disable_warnings()
-    env_thirdparty.AppendUnique(CXXFLAGS=['-std=c++11'])
+    env_thirdparty['CXXFLAGS'] = '-std=c++11'
 
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_dir + "/zip.c")
 
     # GGML loader
 
@@ -36,21 +36,43 @@ if env["builtin_aisuite"]:
             thirdparty_dir + "/ggml/src",
         ]
     )
-    thirdparty_ggml_dir = thirdparty_dir + "/ggml/src"
+    thirdparty_ggml_dir = thirdparty_dir + "/ggml/src/"
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml.c")
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-alloc.c")
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-blas.cpp")
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-backend.c")
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-quants.c")
 
-
-    print("-- Use Vulkan as backend stable-diffusion")
+    # Use Vulkan as backend stable-diffusion
     env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_VULKAN"])
 
-    print("-- Use Flash Attention for memory optimization")
-    env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_FLASH_ATTENTION"])
+    env_thirdparty.AppendUnique(CPPDEFINES=["GGML_USE_VULKAN"]) 
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan.cpp")
 
-    GGML_VULKAN ON
+    print("------编译着色器------")
+    import os
+    vulkan_shaders_gen = env_thirdparty.add_program(env_thirdparty, 'vulkan-shaders-gen', [thirdparty_ggml_dir + "vulkan-shaders/vulkan-shaders-gen.cpp"], LIBS=['pthread'])
+
+    vk_shader_dir = thirdparty_ggml_dir + "vulkan-shaders"
+    vk_output_dir = thirdparty_ggml_dir + "vulkan-shaders-output"
+    if not os.path.exists(vk_output_dir):
+        os.makedirs(vk_output_dir)
+
+    # .comp
+    shader_files = Glob(vk_shader_dir + '/*.comp')
+    # .spv
+    shader_outputs = []
+    for shader in shader_files:
+        shader_output = vk_output_dir + '/' + os.path.basename(shader) + '.spv'
+        shader_outputs.append(
+            env_thirdparty.Command(
+                shader_output, 
+                shader, 
+                vulkan_shaders_gen + [f' --input-dir {vk_shader_dir} --output-dir {vk_output_dir} --target-hpp ggml-vulkan-shaders.hpp --target-cpp ggml-vulkan-shaders.cpp --no-clean']
+            )
+        )
+
+    env_thirdparty.Depends(thirdparty_obj, shader_outputs)
 
     env.modules_sources += thirdparty_obj
 

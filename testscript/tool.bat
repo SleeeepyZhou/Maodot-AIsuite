@@ -1,5 +1,6 @@
 @echo off
 
+cd ..
 set datetime=%date:~0,10% %time:~0,5%
 git status
 pause

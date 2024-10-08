@@ -1,4 +1,17 @@
+ggml-aarch64        ARM64
+ggml-sycl           Intel
+ggml-metal          Apple
+ggml-cann           Huawei
+ggml-cuda           Nvidia
+
 '''
+
+    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-kompute.cpp")
+
+    
+    print("-- Use Flash Attention for memory optimization")
+    env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_FLASH_ATTENTION"])
+
     if env["platform"] == "macos":
         print("-- Use Metal as backend stable-diffusion")
         env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_METAL"])
@@ -11,7 +24,7 @@
 
     else:
     
-        # Ӣ�ض�CPU
+        # Ӣ�ض�CPU
         print("-- Use SYCL as backend stable-diffusion")
         env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_SYCL"])
         GGML_SYCL ON
