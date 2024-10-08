@@ -1,6 +1,4 @@
 
-#include "sd/stable-diffusion.h"
-
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -9,9 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "stable-diffusion.h"
 // #include "preprocessing.hpp"
 #include "flux.hpp"
-#include "stable-diffusion.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
@@ -25,15 +23,56 @@
 #define STB_IMAGE_RESIZE_STATIC
 #include "stb_image_resize.h"
 
+#include "stablediffusion.h"
+
 #include "core/variant/dictionary.h"
 
 #include "core/io/image.h"
 #include "scene/resources/texture.h"
 
-StableDiffusion::StableDiffusion() {
-}
-StableDiffusion::~StableDiffusion() {
-}
+const char* rng_type_to_str[] = {
+    "std_default",
+    "cuda",
+};
+
+// Names of the sampler method, same order as enum sample_method in stable-diffusion.h
+const char* sample_method_str[] = {
+    "euler_a",
+    "euler",
+    "heun",
+    "dpm2",
+    "dpm++2s_a",
+    "dpm++2m",
+    "dpm++2mv2",
+    "ipndm",
+    "ipndm_v",
+    "lcm",
+};
+
+// Names of the sigma schedule overrides, same order as sample_schedule in stable-diffusion.h
+const char* schedule_str[] = {
+    "default",
+    "discrete",
+    "karras",
+    "exponential",
+    "ays",
+    "gits",
+};
+
+const char* modes_str[] = {
+    "txt2img",
+    "img2img",
+    "img2vid",
+    "convert",
+};
+
+enum SDMode {
+    TXT2IMG,
+    IMG2IMG,
+    IMG2VID,
+    CONVERT,
+    MODE_COUNT
+};
 
 struct SDParams {
     int n_threads = -1;
@@ -90,81 +129,49 @@ struct SDParams {
     int upscale_repeats           = 1;
 };
 
-static std::string sd_basename(const std::string& path) {
-    size_t pos = path.find_last_of('/');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    pos = path.find_last_of('\\');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    return path;
+void print_params(SDParams params) {
+    printf("Option: \n");
+    printf("    n_threads:         %d\n", params.n_threads);
+    printf("    mode:              %s\n", modes_str[params.mode]);
+    printf("    model_path:        %s\n", params.model_path.c_str());
+    printf("    wtype:             %s\n", params.wtype < SD_TYPE_COUNT ? sd_type_name(params.wtype) : "unspecified");
+    printf("    clip_l_path:       %s\n", params.clip_l_path.c_str());
+    printf("    t5xxl_path:        %s\n", params.t5xxl_path.c_str());
+    printf("    diffusion_model_path:   %s\n", params.diffusion_model_path.c_str());
+    printf("    vae_path:          %s\n", params.vae_path.c_str());
+    printf("    taesd_path:        %s\n", params.taesd_path.c_str());
+    printf("    esrgan_path:       %s\n", params.esrgan_path.c_str());
+    printf("    controlnet_path:   %s\n", params.controlnet_path.c_str());
+    printf("    embeddings_path:   %s\n", params.embeddings_path.c_str());
+    printf("    stacked_id_embeddings_path:   %s\n", params.stacked_id_embeddings_path.c_str());
+    printf("    input_id_images_path:   %s\n", params.input_id_images_path.c_str());
+    printf("    style ratio:       %.2f\n", params.style_ratio);
+    printf("    normalize input image :  %s\n", params.normalize_input ? "true" : "false");
+    printf("    output_path:       %s\n", params.output_path.c_str());
+    printf("    init_img:          %s\n", params.input_path.c_str());
+    printf("    control_image:     %s\n", params.control_image_path.c_str());
+    printf("    clip on cpu:       %s\n", params.clip_on_cpu ? "true" : "false");
+    printf("    controlnet cpu:    %s\n", params.control_net_cpu ? "true" : "false");
+    printf("    vae decoder on cpu:%s\n", params.vae_on_cpu ? "true" : "false");
+    printf("    strength(control): %.2f\n", params.control_strength);
+    printf("    prompt:            %s\n", params.prompt.c_str());
+    printf("    negative_prompt:   %s\n", params.negative_prompt.c_str());
+    printf("    min_cfg:           %.2f\n", params.min_cfg);
+    printf("    cfg_scale:         %.2f\n", params.cfg_scale);
+    printf("    guidance:          %.2f\n", params.guidance);
+    printf("    clip_skip:         %d\n", params.clip_skip);
+    printf("    width:             %d\n", params.width);
+    printf("    height:            %d\n", params.height);
+    printf("    sample_method:     %s\n", sample_method_str[params.sample_method]);
+    printf("    schedule:          %s\n", schedule_str[params.schedule]);
+    printf("    sample_steps:      %d\n", params.sample_steps);
+    printf("    strength(img2img): %.2f\n", params.strength);
+    printf("    rng:               %s\n", rng_type_to_str[params.rng_type]);
+    printf("    seed:              %ld\n", params.seed);
+    printf("    batch_count:       %d\n", params.batch_count);
+    printf("    vae_tiling:        %s\n", params.vae_tiling ? "true" : "false");
+    printf("    upscale_repeats:   %d\n", params.upscale_repeats);
 }
-
-void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
-    SDParams* params = (SDParams*)data;
-    int tag_color;
-    const char* level_str;
-    FILE* out_stream = (level == SD_LOG_ERROR) ? stderr : stdout;
-
-    if (!log || (!params->verbose && level <= SD_LOG_DEBUG)) {
-        return;
-    }
-
-    switch (level) {
-        case SD_LOG_DEBUG:
-            tag_color = 37;
-            level_str = "DEBUG";
-            break;
-        case SD_LOG_INFO:
-            tag_color = 34;
-            level_str = "INFO";
-            break;
-        case SD_LOG_WARN:
-            tag_color = 35;
-            level_str = "WARN";
-            break;
-        case SD_LOG_ERROR:
-            tag_color = 31;
-            level_str = "ERROR";
-            break;
-        default: /* Potential future-proofing */
-            tag_color = 33;
-            level_str = "?????";
-            break;
-    }
-
-    if (params->color == true) {
-        fprintf(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
-    } else {
-        fprintf(out_stream, "[%-5s] ", level_str);
-    }
-    fputs(log, out_stream);
-    fflush(out_stream);
-}
-
-std::string get_image_params(SDParams params, int64_t seed) {
-    std::string parameter_string = params.prompt + "\n";
-    if (params.negative_prompt.size() != 0) {
-        parameter_string += "Negative prompt: " + params.negative_prompt + "\n";
-    }
-    parameter_string += "Steps: " + std::to_string(params.sample_steps) + ", ";
-    parameter_string += "CFG scale: " + std::to_string(params.cfg_scale) + ", ";
-    parameter_string += "Guidance: " + std::to_string(params.guidance) + ", ";
-    parameter_string += "Seed: " + std::to_string(seed) + ", ";
-    parameter_string += "Size: " + std::to_string(params.width) + "x" + std::to_string(params.height) + ", ";
-    parameter_string += "Model: " + sd_basename(params.model_path) + ", ";
-    parameter_string += "RNG: " + std::string(rng_type_to_str[params.rng_type]) + ", ";
-    parameter_string += "Sampler: " + std::string(sample_method_str[params.sample_method]);
-    if (params.schedule == KARRAS) {
-        parameter_string += " karras";
-    }
-    parameter_string += ", ";
-    parameter_string += "Version: stable-diffusion.cpp";
-    return parameter_string;
-}
-
 void parse_args(int argc, const char** argv, SDParams& params) {
     bool invalid_arg = false;
     std::string arg;
@@ -465,22 +472,15 @@ void parse_args(int argc, const char** argv, SDParams& params) {
                 break;
             }
             params.sample_method = (sample_method_t)sample_method_found;
-        } else if (arg == "-h" || arg == "--help") {
-            print_usage(argc, argv);
-            exit(0);
         } else if (arg == "-v" || arg == "--verbose") {
             params.verbose = true;
         } else if (arg == "--color") {
             params.color = true;
         } else {
-            fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
-            print_usage(argc, argv);
             exit(1);
         }
     }
     if (invalid_arg) {
-        fprintf(stderr, "error: invalid parameter for argument: %s\n", arg.c_str());
-        print_usage(argc, argv);
         exit(1);
     }
     if (params.n_threads <= 0) {
@@ -488,26 +488,20 @@ void parse_args(int argc, const char** argv, SDParams& params) {
     }
 
     if (params.mode != CONVERT && params.mode != IMG2VID && params.prompt.length() == 0) {
-        fprintf(stderr, "error: the following arguments are required: prompt\n");
-        print_usage(argc, argv);
         exit(1);
     }
 
     if (params.model_path.length() == 0 && params.diffusion_model_path.length() == 0) {
-        fprintf(stderr, "error: the following arguments are required: model_path/diffusion_model\n");
-        print_usage(argc, argv);
         exit(1);
     }
 
     if ((params.mode == IMG2IMG || params.mode == IMG2VID) && params.input_path.length() == 0) {
         fprintf(stderr, "error: when using the img2img mode, the following arguments are required: init-img\n");
-        print_usage(argc, argv);
         exit(1);
     }
 
     if (params.output_path.length() == 0) {
         fprintf(stderr, "error: the following arguments are required: output_path\n");
-        print_usage(argc, argv);
         exit(1);
     }
 
@@ -543,6 +537,18 @@ void parse_args(int argc, const char** argv, SDParams& params) {
     }
 }
 
+static std::string sd_basename(const std::string& path) {
+    size_t pos = path.find_last_of('/');
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    pos = path.find_last_of('\\');
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    return path;
+}
+
 static Ref<Texture2D> convert_to_texture2d(const sd_image_t& sd_image) {
         Image::Format format;
         if (sd_image.channel == 3) {
@@ -568,15 +574,58 @@ static Ref<Texture2D> convert_to_texture2d(const sd_image_t& sd_image) {
         return texture;
     }
 
+void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
+    SDParams* params = (SDParams*)data;
+    int tag_color;
+    const char* level_str;
+    FILE* out_stream = (level == SD_LOG_ERROR) ? stderr : stdout;
 
-Ref<Texture2D> StableDiffusion::t2i(String model_path, String prompt){
-	std::vector<std::string> args = {
+    if (!log || (!params->verbose && level <= SD_LOG_DEBUG)) {
+        return;
+    }
+
+    switch (level) {
+        case SD_LOG_DEBUG:
+            tag_color = 37;
+            level_str = "DEBUG";
+            break;
+        case SD_LOG_INFO:
+            tag_color = 34;
+            level_str = "INFO";
+            break;
+        case SD_LOG_WARN:
+            tag_color = 35;
+            level_str = "WARN";
+            break;
+        case SD_LOG_ERROR:
+            tag_color = 31;
+            level_str = "ERROR";
+            break;
+        default: /* Potential future-proofing */
+            tag_color = 33;
+            level_str = "?????";
+            break;
+    }
+
+    if (params->color == true) {
+        fprintf(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
+    } else {
+        fprintf(out_stream, "[%-5s] ", level_str);
+    }
+    fputs(log, out_stream);
+    fflush(out_stream);
+}
+
+
+Ref<Texture2D> StableDiffusion::t2i(std::string model_path, std::string prompt){
+    const char* arr[] = { 
         "",
         "-m",
         model_path,
         "-p",
         prompt
     };
+	const char** args = arr;
 	
 	int argc = static_cast<int>(args.size());
 	
@@ -603,7 +652,7 @@ Ref<Texture2D> StableDiffusion::t2i(String model_path, String prompt){
                                   params.lora_model_dir.c_str(),
                                   params.embeddings_path.c_str(),
                                   params.stacked_id_embeddings_path.c_str(),
-                                  vae_decode_only,
+                                  true,
                                   params.vae_tiling,
                                   true,
                                   params.n_threads,
@@ -618,7 +667,8 @@ Ref<Texture2D> StableDiffusion::t2i(String model_path, String prompt){
         ERR_PRINT("new_sd_ctx_t failed\n");
         return NULL;
     }
-	
+    
+	sd_image_t* control_image = NULL;
 	sd_image_t* results;
 	results = txt2img(sd_ctx,
 		params.prompt.c_str(),
@@ -652,4 +702,9 @@ Ref<Texture2D> StableDiffusion::t2i(String model_path, String prompt){
 
 void StableDiffusion::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("t2i", "value"), &StableDiffusion::t2i);
+}
+
+StableDiffusion::StableDiffusion() {
+}
+StableDiffusion::~StableDiffusion() {
 }
