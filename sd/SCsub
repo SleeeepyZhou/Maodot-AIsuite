@@ -2,10 +2,10 @@
 from misc.utility.scons_hints import *
 
 Import("env")
-Import("env_aisuit")
+Import("env_aisuite")
 
 module_obj = []
 
-env_aisuit.add_source_files(module_obj, "*.cpp")
+env_aisuite.add_source_files(module_obj, "*.cpp")
 
 env.modules_sources += module_obj

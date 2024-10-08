@@ -7,24 +7,23 @@ Import("env_modules")
 env_aisuite = env_modules.Clone()
 
 env_aisuite.AppendUnique(CCFLAGS=['-O2'])
+env_aisuite.AppendUnique(CXXFLAGS=['/std:c++14'])
 
 
 # Thirdparty source files
 thirdparty_obj = []
 
 if env["builtin_aisuite"]:
-    thirdparty_dir = "aisuite"
+    thirdparty_dir = "#modules/ai_suite/aisuite/"
     env_aisuite.Prepend(
         CPPPATH=[
             thirdparty_dir,
         ]
     )
 
-    env_thirdparty = env_aisuite.Clone()
-    env_thirdparty.disable_warnings()
-    env_thirdparty['CXXFLAGS'] = '-std=c++11'
+    env_aisuite.disable_warnings()
 
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_dir + "/zip.c")
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
 
     # GGML loader
 
@@ -37,32 +36,34 @@ if env["builtin_aisuite"]:
     elif sys.platform.startswith('linux'):
         linker_version = os.popen('ld -v').read()
     if 'dyld-1015.7' in linker_version:
-        env_thirdparty.Append(CPPDEFINES=['HAVE_BUGGY_APPLE_LINKER'])
+        env_aisuite.Append(CPPDEFINES=['HAVE_BUGGY_APPLE_LINKER'])
 
-    env_thirdparty.AppendUnique(CPPDEFINES=["GGML_MAX_NAME=128"])
+    env_aisuite.AppendUnique(CPPDEFINES=["GGML_MAX_NAME=128"])
 
-    env_thirdparty.Append(
+    env_aisuite.Append(
         CPPPATH=[
-            thirdparty_dir + "/ggml/include",
-            thirdparty_dir + "/ggml/src",
+            thirdparty_dir + "ggml/src/",
+            thirdparty_dir + "ggml/include/",
         ]
     )
-    thirdparty_ggml_dir = thirdparty_dir + "/ggml/src/"
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml.c")
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-alloc.c")
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-backend.c")
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-quants.c")
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-aarch64.c")
-    # env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-blas.cpp")
+    thirdparty_ggml_dir = thirdparty_dir + "ggml/src/"
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml.c")
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-alloc.c")
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-backend.cpp")
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-quants.c")
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-aarch64.c")
+    # env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-blas.cpp")
 
     # Use Vulkan as backend stable-diffusion
     env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_VULKAN"])
 
-    env_thirdparty.AppendUnique(CPPDEFINES=["GGML_USE_VULKAN"]) 
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan.cpp")
+    env_aisuite.AppendUnique(CPPDEFINES=["GGML_USE_VULKAN"]) 
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan.cpp")
 
+    '''
     print("------编译着色器------")
-    vulkan_shaders_gen = env_thirdparty.add_program(env_thirdparty, 'vulkan-shaders-gen', [thirdparty_ggml_dir + "vulkan-shaders/vulkan-shaders-gen.cpp"], LIBS=['pthread'])
+    env_vulkan = env_aisuite.Clone()
+    vulkan_shaders_gen = env_vulkan.Program('vulkan-shaders-gen', [thirdparty_ggml_dir + "vulkan-shaders/vulkan-shaders-gen.cpp"], LIBS=['pthread'])
 
     vk_shader_dir = thirdparty_ggml_dir + "vulkan-shaders"
     vk_output_dir = thirdparty_ggml_dir + "vulkan-shaders-output"
@@ -70,13 +71,15 @@ if env["builtin_aisuite"]:
     vk_source = thirdparty_ggml_dir + "ggml-vulkan-shaders.cpp"
 
     # .comp
+    
     shader_files = Glob(vk_shader_dir + '/*.comp')
-    shader_generation = env_thirdparty.Command(
+    shader_generation = env_vulkan.Command(
                 [vk_header, vk_source], 
                 shader_files, 
-                [str(vulkan_shaders_gen[0]) + f' --input-dir {vk_shader_dir} --output-dir {vk_output_dir} --target-hpp ggml-vulkan-shaders.hpp --target-cpp ggml-vulkan-shaders.cpp --no-clean']
+                ["./" + str(vulkan_shaders_gen[0]) + f' --input-dir {vk_shader_dir} --output-dir {vk_output_dir} --target-hpp ggml-vulkan-shaders.hpp --target-cpp ggml-vulkan-shaders.cpp --no-clean']
             )
-    env_thirdparty.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan-shaders.cpp")
+    '''
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan-shaders.cpp")
 
     env.modules_sources += thirdparty_obj
 
@@ -86,8 +89,6 @@ if env["builtin_aisuite"]:
 module_obj = []
 env_aisuite.add_source_files(module_obj, "*.cpp")
 env.modules_sources += module_obj
-
-env.add_source_files(env.modules_sources, "*.cpp")
 
 Export("env_aisuite")
 SConscript("sd/SCsub")
