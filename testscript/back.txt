@@ -1,3 +1,20 @@
+## SD_CMakelist ##
+
+# general
+option(SD_VULKAN                     "sd: vulkan backend" OFF)
+
+if (SD_VULKAN)
+    message("-- Use Vulkan as backend stable-diffusion")
+    set(GGML_VULKAN ON)
+    add_definitions(-DSD_USE_VULKAN)
+endif ()
+
+set(SD_LIB stable-diffusion)
+
+
+
+
+
 ggml-aarch64        ARM64
 ggml-sycl           Intel
 ggml-metal          Apple
