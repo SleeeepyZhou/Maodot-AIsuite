@@ -1,681 +1,655 @@
 
 #include "sd/stable-diffusion.h"
 
-#include "core/io/compression.h"
-#include "scene/main/timer.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <iostream>
+#include <random>
+#include <string>
+#include <vector>
 
+// #include "preprocessing.hpp"
+#include "flux.hpp"
+#include "stable-diffusion.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+#include "stb_image_write.h"
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_STATIC
+#include "stb_image_resize.h"
+
+#include "core/variant/dictionary.h"
+
+#include "core/io/image.h"
+#include "scene/resources/texture.h"
 
 StableDiffusion::StableDiffusion() {
 }
-
 StableDiffusion::~StableDiffusion() {
 }
 
-void StableDiffusion::add(int p_value) {
-	count += p_value;
+struct SDParams {
+    int n_threads = -1;
+    SDMode mode   = TXT2IMG;
+
+    std::string model_path;
+    std::string clip_l_path;
+    std::string t5xxl_path;
+    std::string diffusion_model_path;
+    std::string vae_path;
+    std::string taesd_path;
+    std::string esrgan_path;
+    std::string controlnet_path;
+    std::string embeddings_path;
+    std::string stacked_id_embeddings_path;
+    std::string input_id_images_path;
+    sd_type_t wtype = SD_TYPE_COUNT;
+    std::string lora_model_dir;
+    std::string output_path = "output.png";
+    std::string input_path;
+    std::string control_image_path;
+
+    std::string prompt;
+    std::string negative_prompt;
+    float min_cfg     = 1.0f;
+    float cfg_scale   = 7.0f;
+    float guidance    = 3.5f;
+    float style_ratio = 20.f;
+    int clip_skip     = -1;  // <= 0 represents unspecified
+    int width         = 512;
+    int height        = 512;
+    int batch_count   = 1;
+
+    int video_frames         = 6;
+    int motion_bucket_id     = 127;
+    int fps                  = 6;
+    float augmentation_level = 0.f;
+
+    sample_method_t sample_method = EULER_A;
+    schedule_t schedule           = DEFAULT;
+    int sample_steps              = 20;
+    float strength                = 0.75f;
+    float control_strength        = 0.9f;
+    rng_type_t rng_type           = CUDA_RNG;
+    int64_t seed                  = 42;
+    bool verbose                  = false;
+    bool vae_tiling               = false;
+    bool control_net_cpu          = false;
+    bool normalize_input          = false;
+    bool clip_on_cpu              = false;
+    bool vae_on_cpu               = false;
+    bool canny_preprocess         = false;
+    bool color                    = false;
+    int upscale_repeats           = 1;
+};
+
+static std::string sd_basename(const std::string& path) {
+    size_t pos = path.find_last_of('/');
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    pos = path.find_last_of('\\');
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    return path;
 }
 
-void StableDiffusion::reset() {
-	count = 0;
+void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
+    SDParams* params = (SDParams*)data;
+    int tag_color;
+    const char* level_str;
+    FILE* out_stream = (level == SD_LOG_ERROR) ? stderr : stdout;
+
+    if (!log || (!params->verbose && level <= SD_LOG_DEBUG)) {
+        return;
+    }
+
+    switch (level) {
+        case SD_LOG_DEBUG:
+            tag_color = 37;
+            level_str = "DEBUG";
+            break;
+        case SD_LOG_INFO:
+            tag_color = 34;
+            level_str = "INFO";
+            break;
+        case SD_LOG_WARN:
+            tag_color = 35;
+            level_str = "WARN";
+            break;
+        case SD_LOG_ERROR:
+            tag_color = 31;
+            level_str = "ERROR";
+            break;
+        default: /* Potential future-proofing */
+            tag_color = 33;
+            level_str = "?????";
+            break;
+    }
+
+    if (params->color == true) {
+        fprintf(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
+    } else {
+        fprintf(out_stream, "[%-5s] ", level_str);
+    }
+    fputs(log, out_stream);
+    fflush(out_stream);
 }
 
-int StableDiffusion::get_total() const {
-	return count;
+std::string get_image_params(SDParams params, int64_t seed) {
+    std::string parameter_string = params.prompt + "\n";
+    if (params.negative_prompt.size() != 0) {
+        parameter_string += "Negative prompt: " + params.negative_prompt + "\n";
+    }
+    parameter_string += "Steps: " + std::to_string(params.sample_steps) + ", ";
+    parameter_string += "CFG scale: " + std::to_string(params.cfg_scale) + ", ";
+    parameter_string += "Guidance: " + std::to_string(params.guidance) + ", ";
+    parameter_string += "Seed: " + std::to_string(seed) + ", ";
+    parameter_string += "Size: " + std::to_string(params.width) + "x" + std::to_string(params.height) + ", ";
+    parameter_string += "Model: " + sd_basename(params.model_path) + ", ";
+    parameter_string += "RNG: " + std::string(rng_type_to_str[params.rng_type]) + ", ";
+    parameter_string += "Sampler: " + std::string(sample_method_str[params.sample_method]);
+    if (params.schedule == KARRAS) {
+        parameter_string += " karras";
+    }
+    parameter_string += ", ";
+    parameter_string += "Version: stable-diffusion.cpp";
+    return parameter_string;
+}
+
+void parse_args(int argc, const char** argv, SDParams& params) {
+    bool invalid_arg = false;
+    std::string arg;
+    for (int i = 1; i < argc; i++) {
+        arg = argv[i];
+
+        if (arg == "-t" || arg == "--threads") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.n_threads = std::stoi(argv[i]);
+        } else if (arg == "-M" || arg == "--mode") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            const char* mode_selected = argv[i];
+            int mode_found            = -1;
+            for (int d = 0; d < MODE_COUNT; d++) {
+                if (!strcmp(mode_selected, modes_str[d])) {
+                    mode_found = d;
+                }
+            }
+            if (mode_found == -1) {
+                fprintf(stderr,
+                        "error: invalid mode %s, must be one of [txt2img, img2img, img2vid, convert]\n",
+                        mode_selected);
+                exit(1);
+            }
+            params.mode = (SDMode)mode_found;
+        } else if (arg == "-m" || arg == "--model") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.model_path = argv[i];
+        } else if (arg == "--clip_l") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.clip_l_path = argv[i];
+        } else if (arg == "--t5xxl") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.t5xxl_path = argv[i];
+        } else if (arg == "--diffusion-model") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.diffusion_model_path = argv[i];
+        } else if (arg == "--vae") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.vae_path = argv[i];
+        } else if (arg == "--taesd") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.taesd_path = argv[i];
+        } else if (arg == "--control-net") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.controlnet_path = argv[i];
+        } else if (arg == "--upscale-model") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.esrgan_path = argv[i];
+        } else if (arg == "--embd-dir") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.embeddings_path = argv[i];
+        } else if (arg == "--stacked-id-embd-dir") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.stacked_id_embeddings_path = argv[i];
+        } else if (arg == "--input-id-images-dir") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.input_id_images_path = argv[i];
+        } else if (arg == "--type") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            std::string type = argv[i];
+            if (type == "f32") {
+                params.wtype = SD_TYPE_F32;
+            } else if (type == "f16") {
+                params.wtype = SD_TYPE_F16;
+            } else if (type == "q4_0") {
+                params.wtype = SD_TYPE_Q4_0;
+            } else if (type == "q4_1") {
+                params.wtype = SD_TYPE_Q4_1;
+            } else if (type == "q5_0") {
+                params.wtype = SD_TYPE_Q5_0;
+            } else if (type == "q5_1") {
+                params.wtype = SD_TYPE_Q5_1;
+            } else if (type == "q8_0") {
+                params.wtype = SD_TYPE_Q8_0;
+            } else if (type == "q2_k") {
+                params.wtype = SD_TYPE_Q2_K;
+            } else if (type == "q3_k") {
+                params.wtype = SD_TYPE_Q3_K;
+            } else if (type == "q4_k") {
+                params.wtype = SD_TYPE_Q4_K;
+            } else {
+                fprintf(stderr, "error: invalid weight format %s, must be one of [f32, f16, q4_0, q4_1, q5_0, q5_1, q8_0, q2_k, q3_k, q4_k]\n",
+                        type.c_str());
+                exit(1);
+            }
+        } else if (arg == "--lora-model-dir") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.lora_model_dir = argv[i];
+        } else if (arg == "-i" || arg == "--init-img") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.input_path = argv[i];
+        } else if (arg == "--control-image") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.control_image_path = argv[i];
+        } else if (arg == "-o" || arg == "--output") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.output_path = argv[i];
+        } else if (arg == "-p" || arg == "--prompt") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.prompt = argv[i];
+        } else if (arg == "--upscale-repeats") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.upscale_repeats = std::stoi(argv[i]);
+            if (params.upscale_repeats < 1) {
+                fprintf(stderr, "error: upscale multiplier must be at least 1\n");
+                exit(1);
+            }
+        } else if (arg == "-n" || arg == "--negative-prompt") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.negative_prompt = argv[i];
+        } else if (arg == "--cfg-scale") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.cfg_scale = std::stof(argv[i]);
+        } else if (arg == "--guidance") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.guidance = std::stof(argv[i]);
+        } else if (arg == "--strength") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.strength = std::stof(argv[i]);
+        } else if (arg == "--style-ratio") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.style_ratio = std::stof(argv[i]);
+        } else if (arg == "--control-strength") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.control_strength = std::stof(argv[i]);
+        } else if (arg == "-H" || arg == "--height") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.height = std::stoi(argv[i]);
+        } else if (arg == "-W" || arg == "--width") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.width = std::stoi(argv[i]);
+        } else if (arg == "--steps") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.sample_steps = std::stoi(argv[i]);
+        } else if (arg == "--clip-skip") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.clip_skip = std::stoi(argv[i]);
+        } else if (arg == "--vae-tiling") {
+            params.vae_tiling = true;
+        } else if (arg == "--control-net-cpu") {
+            params.control_net_cpu = true;
+        } else if (arg == "--normalize-input") {
+            params.normalize_input = true;
+        } else if (arg == "--clip-on-cpu") {
+            params.clip_on_cpu = true;  // will slow down get_learned_condiotion but necessary for low MEM GPUs
+        } else if (arg == "--vae-on-cpu") {
+            params.vae_on_cpu = true;  // will slow down latent decoding but necessary for low MEM GPUs
+        } else if (arg == "--canny") {
+            params.canny_preprocess = true;
+        } else if (arg == "-b" || arg == "--batch-count") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.batch_count = std::stoi(argv[i]);
+        } else if (arg == "--rng") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            std::string rng_type_str = argv[i];
+            if (rng_type_str == "std_default") {
+                params.rng_type = STD_DEFAULT_RNG;
+            } else if (rng_type_str == "cuda") {
+                params.rng_type = CUDA_RNG;
+            } else {
+                invalid_arg = true;
+                break;
+            }
+        } else if (arg == "--schedule") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            const char* schedule_selected = argv[i];
+            int schedule_found            = -1;
+            for (int d = 0; d < N_SCHEDULES; d++) {
+                if (!strcmp(schedule_selected, schedule_str[d])) {
+                    schedule_found = d;
+                }
+            }
+            if (schedule_found == -1) {
+                invalid_arg = true;
+                break;
+            }
+            params.schedule = (schedule_t)schedule_found;
+        } else if (arg == "-s" || arg == "--seed") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            params.seed = std::stoll(argv[i]);
+        } else if (arg == "--sampling-method") {
+            if (++i >= argc) {
+                invalid_arg = true;
+                break;
+            }
+            const char* sample_method_selected = argv[i];
+            int sample_method_found            = -1;
+            for (int m = 0; m < N_SAMPLE_METHODS; m++) {
+                if (!strcmp(sample_method_selected, sample_method_str[m])) {
+                    sample_method_found = m;
+                }
+            }
+            if (sample_method_found == -1) {
+                invalid_arg = true;
+                break;
+            }
+            params.sample_method = (sample_method_t)sample_method_found;
+        } else if (arg == "-h" || arg == "--help") {
+            print_usage(argc, argv);
+            exit(0);
+        } else if (arg == "-v" || arg == "--verbose") {
+            params.verbose = true;
+        } else if (arg == "--color") {
+            params.color = true;
+        } else {
+            fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
+            print_usage(argc, argv);
+            exit(1);
+        }
+    }
+    if (invalid_arg) {
+        fprintf(stderr, "error: invalid parameter for argument: %s\n", arg.c_str());
+        print_usage(argc, argv);
+        exit(1);
+    }
+    if (params.n_threads <= 0) {
+        params.n_threads = get_num_physical_cores();
+    }
+
+    if (params.mode != CONVERT && params.mode != IMG2VID && params.prompt.length() == 0) {
+        fprintf(stderr, "error: the following arguments are required: prompt\n");
+        print_usage(argc, argv);
+        exit(1);
+    }
+
+    if (params.model_path.length() == 0 && params.diffusion_model_path.length() == 0) {
+        fprintf(stderr, "error: the following arguments are required: model_path/diffusion_model\n");
+        print_usage(argc, argv);
+        exit(1);
+    }
+
+    if ((params.mode == IMG2IMG || params.mode == IMG2VID) && params.input_path.length() == 0) {
+        fprintf(stderr, "error: when using the img2img mode, the following arguments are required: init-img\n");
+        print_usage(argc, argv);
+        exit(1);
+    }
+
+    if (params.output_path.length() == 0) {
+        fprintf(stderr, "error: the following arguments are required: output_path\n");
+        print_usage(argc, argv);
+        exit(1);
+    }
+
+    if (params.width <= 0 || params.width % 64 != 0) {
+        fprintf(stderr, "error: the width must be a multiple of 64\n");
+        exit(1);
+    }
+
+    if (params.height <= 0 || params.height % 64 != 0) {
+        fprintf(stderr, "error: the height must be a multiple of 64\n");
+        exit(1);
+    }
+
+    if (params.sample_steps <= 0) {
+        fprintf(stderr, "error: the sample_steps must be greater than 0\n");
+        exit(1);
+    }
+
+    if (params.strength < 0.f || params.strength > 1.f) {
+        fprintf(stderr, "error: can only work with strength in [0.0, 1.0]\n");
+        exit(1);
+    }
+
+    if (params.seed < 0) {
+        srand((int)time(NULL));
+        params.seed = rand();
+    }
+
+    if (params.mode == CONVERT) {
+        if (params.output_path == "output.png") {
+            params.output_path = "output.gguf";
+        }
+    }
+}
+
+static Ref<Texture2D> convert_to_texture2d(const sd_image_t& sd_image) {
+        Image::Format format;
+        if (sd_image.channel == 3) {
+            format = Image::FORMAT_RGB8;
+        } else if (sd_image.channel == 4) {
+            format = Image::FORMAT_RGBA8;
+        } else {
+            ERR_PRINT("Unsupported image format. Only RGB or RGBA are supported.");
+            return Ref<Texture2D>();
+        }
+
+        Ref<Image> img = memnew(Image);
+        img->create(sd_image.width, sd_image.height, false, format);
+
+        int data_size = sd_image.width * sd_image.height * sd_image.channel;
+        img->lock();
+        memcpy(img->get_data().ptrw(), sd_image.data, data_size);
+        img->unlock();
+
+        Ref<Texture2D> texture = memnew(Texture2D);
+        texture->create_from_image(img);
+
+        return texture;
+    }
+
+
+Ref<Texture2D> StableDiffusion::t2i(String model_path, String prompt){
+	std::vector<std::string> args = {
+        "",
+        "-m",
+        model_path,
+        "-p",
+        prompt
+    };
+	
+	int argc = static_cast<int>(args.size());
+	
+	char** argv = new char*[argc + 1];
+    for (int i = 0; i < argc; ++i) {
+        char* arg = new char[args[i].length() + 1];
+        std::strcpy(arg, args[i].c_str());
+        argv[i] = arg;
+    }
+    argv[argc] = nullptr;
+
+	SDParams params;
+	
+    parse_args(argc, argv, params);
+    sd_set_log_callback(sd_log_cb, (void*)&params);
+	
+	sd_ctx_t* sd_ctx = new_sd_ctx(params.model_path.c_str(),
+                                  params.clip_l_path.c_str(),
+                                  params.t5xxl_path.c_str(),
+                                  params.diffusion_model_path.c_str(),
+                                  params.vae_path.c_str(),
+                                  params.taesd_path.c_str(),
+                                  params.controlnet_path.c_str(),
+                                  params.lora_model_dir.c_str(),
+                                  params.embeddings_path.c_str(),
+                                  params.stacked_id_embeddings_path.c_str(),
+                                  vae_decode_only,
+                                  params.vae_tiling,
+                                  true,
+                                  params.n_threads,
+                                  params.wtype,
+                                  params.rng_type,
+                                  params.schedule,
+                                  params.clip_on_cpu,
+                                  params.control_net_cpu,
+                                  params.vae_on_cpu);
+	
+	if (sd_ctx == NULL) {
+        ERR_PRINT("new_sd_ctx_t failed\n");
+        return NULL;
+    }
+	
+	sd_image_t* results;
+	results = txt2img(sd_ctx,
+		params.prompt.c_str(),
+		params.negative_prompt.c_str(),
+		params.clip_skip,
+		params.cfg_scale,
+		params.guidance,
+		params.width,
+		params.height,
+		params.sample_method,
+		params.sample_steps,
+		params.seed,
+		params.batch_count,
+		control_image,
+		params.control_strength,
+		params.style_ratio,
+		params.normalize_input,
+		params.input_id_images_path.c_str());
+	if (results == NULL) {
+        ERR_PRINT("generate failed\n");
+        free_sd_ctx(sd_ctx);
+        return NULL;
+    }
+	Ref<Texture2D> texture;
+	texture = SDImageConverter::convert_to_texture2d(results);
+	
+	free(results);
+    free_sd_ctx(sd_ctx);
+	return texture;
 }
 
 void StableDiffusion::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("add", "value"), &StableDiffusion::add);
-	ClassDB::bind_method(D_METHOD("reset"), &StableDiffusion::reset);
-	ClassDB::bind_method(D_METHOD("get_total"), &StableDiffusion::get_total);
-}
-
-
-
-
-Error HTTPRequest::_request() {
-	return client->connect_to_host(url, port, use_tls ? tls_options : nullptr);
-}
-
-Error HTTPRequest::_parse_url(const String& p_url) {
-	use_tls = false;
-	request_string = "";
-	port = 80;
-	request_sent = false;
-	got_response = false;
-	body_len = -1;
-	body.clear();
-	downloaded.set(0);
-	final_body_size.set(0);
-	redirections = 0;
-
-	String scheme;
-	String fragment;
-	Error err = p_url.parse_url(scheme, url, port, request_string, fragment);
-	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Error parsing URL: '%s'.", p_url));
-
-	if (scheme == "https://") {
-		use_tls = true;
-	}
-	else if (scheme != "http://") {
-		ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, vformat("Invalid URL scheme: '%s'.", scheme));
-	}
-
-	if (port == 0) {
-		port = use_tls ? 443 : 80;
-	}
-	if (request_string.is_empty()) {
-		request_string = "/";
-	}
-	return OK;
-}
-
-bool HTTPRequest::has_header(const PackedStringArray& p_headers, const String& p_header_name) {
-	bool exists = false;
-
-	String lower_case_header_name = p_header_name.to_lower();
-	for (int i = 0; i < p_headers.size() && !exists; i++) {
-		String sanitized = p_headers[i].strip_edges().to_lower();
-		if (sanitized.begins_with(lower_case_header_name)) {
-			exists = true;
-		}
-	}
-
-	return exists;
-}
-
-String HTTPRequest::get_header_value(const PackedStringArray& p_headers, const String& p_header_name) {
-	String value = "";
-
-	String lowwer_case_header_name = p_header_name.to_lower();
-	for (int i = 0; i < p_headers.size(); i++) {
-		if (p_headers[i].find(":") > 0) {
-			Vector<String> parts = p_headers[i].split(":", false, 1);
-			if (parts.size() > 1 && parts[0].strip_edges().to_lower() == lowwer_case_header_name) {
-				value = parts[1].strip_edges();
-				break;
-			}
-		}
-	}
-
-	return value;
-}
-
-Error HTTPRequest::request(const String& p_url, const Vector<String>& p_custom_headers, HTTPClient::Method p_method, const String& p_request_data) {
-	// Copy the string into a raw buffer.
-	Vector<uint8_t> raw_data;
-
-	CharString charstr = p_request_data.utf8();
-	size_t len = charstr.length();
-	if (len > 0) {
-		raw_data.resize(len);
-		uint8_t* w = raw_data.ptrw();
-		memcpy(w, charstr.ptr(), len);
-	}
-
-	return request_raw(p_url, p_custom_headers, p_method, raw_data);
-}
-
-Error HTTPRequest::request_raw(const String& p_url, const Vector<String>& p_custom_headers, HTTPClient::Method p_method, const Vector<uint8_t>& p_request_data_raw) {
-	ERR_FAIL_COND_V(!is_inside_tree(), ERR_UNCONFIGURED);
-	ERR_FAIL_COND_V_MSG(requesting, ERR_BUSY, "HTTPRequest is processing a request. Wait for completion or cancel it before attempting a new one.");
-
-	if (timeout > 0) {
-		timer->stop();
-		timer->start(timeout);
-	}
-
-	method = p_method;
-
-	Error err = _parse_url(p_url);
-	if (err) {
-		return err;
-	}
-
-	headers = p_custom_headers;
-
-	if (accept_gzip) {
-		// If the user has specified an Accept-Encoding header, don't overwrite it.
-		if (!has_header(headers, "Accept-Encoding")) {
-			headers.push_back("Accept-Encoding: gzip, deflate");
-		}
-	}
-
-	request_data = p_request_data_raw;
-
-	requesting = true;
-
-	if (use_threads.is_set()) {
-		thread_done.clear();
-		thread_request_quit.clear();
-		client->set_blocking_mode(true);
-		thread.start(_thread_func, this);
-	}
-	else {
-		client->set_blocking_mode(false);
-		err = _request();
-		if (err != OK) {
-			_defer_done(RESULT_CANT_CONNECT, 0, PackedStringArray(), PackedByteArray());
-			return ERR_CANT_CONNECT;
-		}
-
-		set_process_internal(true);
-	}
-
-	return OK;
-}
-
-void HTTPRequest::_thread_func(void* p_userdata) {
-	HTTPRequest* hr = static_cast<HTTPRequest*>(p_userdata);
-
-	Error err = hr->_request();
-
-	if (err != OK) {
-		hr->_defer_done(RESULT_CANT_CONNECT, 0, PackedStringArray(), PackedByteArray());
-	}
-	else {
-		while (!hr->thread_request_quit.is_set()) {
-			bool exit = hr->_update_connection();
-			if (exit) {
-				break;
-			}
-			OS::get_singleton()->delay_usec(1);
-		}
-	}
-
-	hr->thread_done.set();
-}
-
-void HTTPRequest::cancel_request() {
-	timer->stop();
-
-	if (!requesting) {
-		return;
-	}
-
-	if (!use_threads.is_set()) {
-		set_process_internal(false);
-	}
-	else {
-		thread_request_quit.set();
-		if (thread.is_started()) {
-			thread.wait_to_finish();
-		}
-	}
-
-	file.unref();
-	decompressor.unref();
-	client->close();
-	body.clear();
-	got_response = false;
-	response_code = -1;
-	request_sent = false;
-	requesting = false;
-}
-
-bool HTTPRequest::_handle_response(bool* ret_value) {
-	if (!client->has_response()) {
-		_defer_done(RESULT_NO_RESPONSE, 0, PackedStringArray(), PackedByteArray());
-		*ret_value = true;
-		return true;
-	}
-
-	got_response = true;
-	response_code = client->get_response_code();
-	List<String> rheaders;
-	client->get_response_headers(&rheaders);
-	response_headers.clear();
-	downloaded.set(0);
-	final_body_size.set(0);
-	decompressor.unref();
-
-	for (const String& E : rheaders) {
-		response_headers.push_back(E);
-	}
-
-	if (response_code == 301 || response_code == 302) {
-		// Handle redirect.
-
-		if (max_redirects >= 0 && redirections >= max_redirects) {
-			_defer_done(RESULT_REDIRECT_LIMIT_REACHED, response_code, response_headers, PackedByteArray());
-			*ret_value = true;
-			return true;
-		}
-
-		String new_request;
-
-		for (const String& E : rheaders) {
-			if (E.containsn("Location: ")) {
-				new_request = E.substr(9, E.length()).strip_edges();
-			}
-		}
-
-		if (!new_request.is_empty()) {
-			// Process redirect.
-			client->close();
-			int new_redirs = redirections + 1; // Because _request() will clear it.
-			Error err;
-			if (new_request.begins_with("http")) {
-				// New url, new request.
-				_parse_url(new_request);
-			}
-			else {
-				request_string = new_request;
-			}
-
-			err = _request();
-			if (err == OK) {
-				request_sent = false;
-				got_response = false;
-				body_len = -1;
-				body.clear();
-				downloaded.set(0);
-				final_body_size.set(0);
-				redirections = new_redirs;
-				*ret_value = false;
-				return true;
-			}
-		}
-	}
-
-	// Check if we need to start streaming decompression.
-	String content_encoding;
-	if (accept_gzip) {
-		content_encoding = get_header_value(response_headers, "Content-Encoding").to_lower();
-	}
-	if (content_encoding == "gzip") {
-		decompressor.instantiate();
-		decompressor->start_decompression(false, get_download_chunk_size());
-	}
-	else if (content_encoding == "deflate") {
-		decompressor.instantiate();
-		decompressor->start_decompression(true, get_download_chunk_size());
-	}
-
-	return false;
-}
-
-bool HTTPRequest::_update_connection() {
-	switch (client->get_status()) {
-	case HTTPClient::STATUS_DISCONNECTED: {
-		_defer_done(RESULT_CANT_CONNECT, 0, PackedStringArray(), PackedByteArray());
-		return true; // End it, since it's disconnected.
-	} break;
-	case HTTPClient::STATUS_RESOLVING: {
-		client->poll();
-		// Must wait.
-		return false;
-	} break;
-	case HTTPClient::STATUS_CANT_RESOLVE: {
-		_defer_done(RESULT_CANT_RESOLVE, 0, PackedStringArray(), PackedByteArray());
-		return true;
-
-	} break;
-	case HTTPClient::STATUS_CONNECTING: {
-		client->poll();
-		// Must wait.
-		return false;
-	} break; // Connecting to IP.
-	case HTTPClient::STATUS_CANT_CONNECT: {
-		_defer_done(RESULT_CANT_CONNECT, 0, PackedStringArray(), PackedByteArray());
-		return true;
-
-	} break;
-	case HTTPClient::STATUS_CONNECTED: {
-		if (request_sent) {
-			if (!got_response) {
-				// No body.
-
-				bool ret_value;
-
-				if (_handle_response(&ret_value)) {
-					return ret_value;
-				}
-
-				_defer_done(RESULT_SUCCESS, response_code, response_headers, PackedByteArray());
-				return true;
-			}
-			if (body_len < 0) {
-				// Chunked transfer is done.
-				_defer_done(RESULT_SUCCESS, response_code, response_headers, body);
-				return true;
-			}
-
-			_defer_done(RESULT_CHUNKED_BODY_SIZE_MISMATCH, response_code, response_headers, PackedByteArray());
-			return true;
-			// Request might have been done.
-		}
-		else {
-			// Did not request yet, do request.
-
-			int size = request_data.size();
-			Error err = client->request(method, request_string, headers, size > 0 ? request_data.ptr() : nullptr, size);
-			if (err != OK) {
-				_defer_done(RESULT_CONNECTION_ERROR, 0, PackedStringArray(), PackedByteArray());
-				return true;
-			}
-
-			request_sent = true;
-			return false;
-		}
-	} break; // Connected: break requests only accepted here.
-	case HTTPClient::STATUS_REQUESTING: {
-		// Must wait, still requesting.
-		client->poll();
-		return false;
-
-	} break; // Request in progress.
-	case HTTPClient::STATUS_BODY: {
-		if (!got_response) {
-			bool ret_value;
-
-			if (_handle_response(&ret_value)) {
-				return ret_value;
-			}
-
-			if (!client->is_response_chunked() && client->get_response_body_length() == 0) {
-				_defer_done(RESULT_SUCCESS, response_code, response_headers, PackedByteArray());
-				return true;
-			}
-
-			// No body len (-1) if chunked or no content-length header was provided.
-			// Change your webserver configuration if you want body len.
-			body_len = client->get_response_body_length();
-
-			if (body_size_limit >= 0 && body_len > body_size_limit) {
-				_defer_done(RESULT_BODY_SIZE_LIMIT_EXCEEDED, response_code, response_headers, PackedByteArray());
-				return true;
-			}
-
-			if (!download_to_file.is_empty()) {
-				file = FileAccess::open(download_to_file, FileAccess::WRITE);
-				if (file.is_null()) {
-					_defer_done(RESULT_DOWNLOAD_FILE_CANT_OPEN, response_code, response_headers, PackedByteArray());
-					return true;
-				}
-			}
-		}
-
-		client->poll();
-		if (client->get_status() != HTTPClient::STATUS_BODY) {
-			return false;
-		}
-
-		PackedByteArray chunk;
-		if (decompressor.is_null()) {
-			// Chunk can be read directly.
-			chunk = client->read_response_body_chunk();
-			downloaded.add(chunk.size());
-		}
-		else {
-			// Chunk is the result of decompression.
-			PackedByteArray compressed = client->read_response_body_chunk();
-			downloaded.add(compressed.size());
-
-			int pos = 0;
-			int left = compressed.size();
-			while (left) {
-				int w = 0;
-				Error err = decompressor->put_partial_data(compressed.ptr() + pos, left, w);
-				if (err == OK) {
-					PackedByteArray dc;
-					dc.resize(decompressor->get_available_bytes());
-					err = decompressor->get_data(dc.ptrw(), dc.size());
-					chunk.append_array(dc);
-				}
-				if (err != OK) {
-					_defer_done(RESULT_BODY_DECOMPRESS_FAILED, response_code, response_headers, PackedByteArray());
-					return true;
-				}
-				// We need this check here because a "zip bomb" could result in a chunk of few kilos decompressing into gigabytes of data.
-				if (body_size_limit >= 0 && final_body_size.get() + chunk.size() > body_size_limit) {
-					_defer_done(RESULT_BODY_SIZE_LIMIT_EXCEEDED, response_code, response_headers, PackedByteArray());
-					return true;
-				}
-				pos += w;
-				left -= w;
-			}
-		}
-		final_body_size.add(chunk.size());
-
-		if (body_size_limit >= 0 && final_body_size.get() > body_size_limit) {
-			_defer_done(RESULT_BODY_SIZE_LIMIT_EXCEEDED, response_code, response_headers, PackedByteArray());
-			return true;
-		}
-
-		if (chunk.size()) {
-			if (file.is_valid()) {
-				const uint8_t* r = chunk.ptr();
-				file->store_buffer(r, chunk.size());
-				if (file->get_error() != OK) {
-					_defer_done(RESULT_DOWNLOAD_FILE_WRITE_ERROR, response_code, response_headers, PackedByteArray());
-					return true;
-				}
-			}
-			else {
-				body.append_array(chunk);
-			}
-		}
-
-		if (body_len >= 0) {
-			if (downloaded.get() == body_len) {
-				_defer_done(RESULT_SUCCESS, response_code, response_headers, body);
-				return true;
-			}
-		}
-		else if (client->get_status() == HTTPClient::STATUS_DISCONNECTED) {
-			// We read till EOF, with no errors. Request is done.
-			_defer_done(RESULT_SUCCESS, response_code, response_headers, body);
-			return true;
-		}
-
-		return false;
-
-	} break; // Request resulted in body: break which must be read.
-	case HTTPClient::STATUS_CONNECTION_ERROR: {
-		_defer_done(RESULT_CONNECTION_ERROR, 0, PackedStringArray(), PackedByteArray());
-		return true;
-	} break;
-	case HTTPClient::STATUS_TLS_HANDSHAKE_ERROR: {
-		_defer_done(RESULT_TLS_HANDSHAKE_ERROR, 0, PackedStringArray(), PackedByteArray());
-		return true;
-	} break;
-	}
-
-	ERR_FAIL_V(false);
-}
-
-void HTTPRequest::_defer_done(int p_status, int p_code, const PackedStringArray& p_headers, const PackedByteArray& p_data) {
-	callable_mp(this, &HTTPRequest::_request_done).call_deferred(p_status, p_code, p_headers, p_data);
-}
-
-void HTTPRequest::_request_done(int p_status, int p_code, const PackedStringArray& p_headers, const PackedByteArray& p_data) {
-	cancel_request();
-
-	emit_signal(SNAME("request_completed"), p_status, p_code, p_headers, p_data);
-}
-
-void HTTPRequest::_notification(int p_what) {
-	switch (p_what) {
-	case NOTIFICATION_INTERNAL_PROCESS: {
-		if (use_threads.is_set()) {
-			return;
-		}
-		bool done = _update_connection();
-		if (done) {
-			set_process_internal(false);
-		}
-	} break;
-
-	case NOTIFICATION_EXIT_TREE: {
-		if (requesting) {
-			cancel_request();
-		}
-	} break;
-	}
-}
-
-void HTTPRequest::set_use_threads(bool p_use) {
-	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
-#ifdef THREADS_ENABLED
-	use_threads.set_to(p_use);
-#endif
-}
-
-bool HTTPRequest::is_using_threads() const {
-	return use_threads.is_set();
-}
-
-void HTTPRequest::set_accept_gzip(bool p_gzip) {
-	accept_gzip = p_gzip;
-}
-
-bool HTTPRequest::is_accepting_gzip() const {
-	return accept_gzip;
-}
-
-void HTTPRequest::set_body_size_limit(int p_bytes) {
-	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
-
-	body_size_limit = p_bytes;
-}
-
-int HTTPRequest::get_body_size_limit() const {
-	return body_size_limit;
-}
-
-void HTTPRequest::set_download_file(const String& p_file) {
-	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
-
-	download_to_file = p_file;
-}
-
-String HTTPRequest::get_download_file() const {
-	return download_to_file;
-}
-
-void HTTPRequest::set_download_chunk_size(int p_chunk_size) {
-	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
-
-	client->set_read_chunk_size(p_chunk_size);
-}
-
-int HTTPRequest::get_download_chunk_size() const {
-	return client->get_read_chunk_size();
-}
-
-HTTPClient::Status HTTPRequest::get_http_client_status() const {
-	return client->get_status();
-}
-
-void HTTPRequest::set_max_redirects(int p_max) {
-	max_redirects = p_max;
-}
-
-int HTTPRequest::get_max_redirects() const {
-	return max_redirects;
-}
-
-int HTTPRequest::get_downloaded_bytes() const {
-	return downloaded.get();
-}
-
-int HTTPRequest::get_body_size() const {
-	return body_len;
-}
-
-void HTTPRequest::set_http_proxy(const String& p_host, int p_port) {
-	client->set_http_proxy(p_host, p_port);
-}
-
-void HTTPRequest::set_https_proxy(const String& p_host, int p_port) {
-	client->set_https_proxy(p_host, p_port);
-}
-
-void HTTPRequest::set_timeout(double p_timeout) {
-	ERR_FAIL_COND(p_timeout < 0);
-	timeout = p_timeout;
-}
-
-double HTTPRequest::get_timeout() {
-	return timeout;
-}
-
-void HTTPRequest::_timeout() {
-	cancel_request();
-	_defer_done(RESULT_TIMEOUT, 0, PackedStringArray(), PackedByteArray());
-}
-
-void HTTPRequest::set_tls_options(const Ref<TLSOptions>& p_options) {
-	ERR_FAIL_COND(p_options.is_null() || p_options->is_server());
-	tls_options = p_options;
-}
-
-void HTTPRequest::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
-	ClassDB::bind_method(D_METHOD("request_raw", "url", "custom_headers", "method", "request_data_raw"), &HTTPRequest::request_raw, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(PackedByteArray()));
-	ClassDB::bind_method(D_METHOD("cancel_request"), &HTTPRequest::cancel_request);
-	ClassDB::bind_method(D_METHOD("set_tls_options", "client_options"), &HTTPRequest::set_tls_options);
-
-	ClassDB::bind_method(D_METHOD("get_http_client_status"), &HTTPRequest::get_http_client_status);
-
-	ClassDB::bind_method(D_METHOD("set_use_threads", "enable"), &HTTPRequest::set_use_threads);
-	ClassDB::bind_method(D_METHOD("is_using_threads"), &HTTPRequest::is_using_threads);
-
-	ClassDB::bind_method(D_METHOD("set_accept_gzip", "enable"), &HTTPRequest::set_accept_gzip);
-	ClassDB::bind_method(D_METHOD("is_accepting_gzip"), &HTTPRequest::is_accepting_gzip);
-
-	ClassDB::bind_method(D_METHOD("set_body_size_limit", "bytes"), &HTTPRequest::set_body_size_limit);
-	ClassDB::bind_method(D_METHOD("get_body_size_limit"), &HTTPRequest::get_body_size_limit);
-
-	ClassDB::bind_method(D_METHOD("set_max_redirects", "amount"), &HTTPRequest::set_max_redirects);
-	ClassDB::bind_method(D_METHOD("get_max_redirects"), &HTTPRequest::get_max_redirects);
-
-	ClassDB::bind_method(D_METHOD("set_download_file", "path"), &HTTPRequest::set_download_file);
-	ClassDB::bind_method(D_METHOD("get_download_file"), &HTTPRequest::get_download_file);
-
-	ClassDB::bind_method(D_METHOD("get_downloaded_bytes"), &HTTPRequest::get_downloaded_bytes);
-	ClassDB::bind_method(D_METHOD("get_body_size"), &HTTPRequest::get_body_size);
-
-	ClassDB::bind_method(D_METHOD("set_timeout", "timeout"), &HTTPRequest::set_timeout);
-	ClassDB::bind_method(D_METHOD("get_timeout"), &HTTPRequest::get_timeout);
-
-	ClassDB::bind_method(D_METHOD("set_download_chunk_size", "chunk_size"), &HTTPRequest::set_download_chunk_size);
-	ClassDB::bind_method(D_METHOD("get_download_chunk_size"), &HTTPRequest::get_download_chunk_size);
-
-	ClassDB::bind_method(D_METHOD("set_http_proxy", "host", "port"), &HTTPRequest::set_http_proxy);
-	ClassDB::bind_method(D_METHOD("set_https_proxy", "host", "port"), &HTTPRequest::set_https_proxy);
-
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "download_file", PROPERTY_HINT_FILE), "set_download_file", "get_download_file");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "download_chunk_size", PROPERTY_HINT_RANGE, "256,16777216,suffix:B"), "set_download_chunk_size", "get_download_chunk_size");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_threads"), "set_use_threads", "is_using_threads");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "accept_gzip"), "set_accept_gzip", "is_accepting_gzip");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "body_size_limit", PROPERTY_HINT_RANGE, "-1,2000000000,suffix:B"), "set_body_size_limit", "get_body_size_limit");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_redirects", PROPERTY_HINT_RANGE, "-1,64"), "set_max_redirects", "get_max_redirects");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "timeout", PROPERTY_HINT_RANGE, "0,3600,0.1,or_greater,suffix:s"), "set_timeout", "get_timeout");
-
-	ADD_SIGNAL(MethodInfo("request_completed", PropertyInfo(Variant::INT, "result"), PropertyInfo(Variant::INT, "response_code"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "headers"), PropertyInfo(Variant::PACKED_BYTE_ARRAY, "body")));
-
-	BIND_ENUM_CONSTANT(RESULT_SUCCESS);
-	BIND_ENUM_CONSTANT(RESULT_CHUNKED_BODY_SIZE_MISMATCH);
-	BIND_ENUM_CONSTANT(RESULT_CANT_CONNECT);
-	BIND_ENUM_CONSTANT(RESULT_CANT_RESOLVE);
-	BIND_ENUM_CONSTANT(RESULT_CONNECTION_ERROR);
-	BIND_ENUM_CONSTANT(RESULT_TLS_HANDSHAKE_ERROR);
-	BIND_ENUM_CONSTANT(RESULT_NO_RESPONSE);
-	BIND_ENUM_CONSTANT(RESULT_BODY_SIZE_LIMIT_EXCEEDED);
-	BIND_ENUM_CONSTANT(RESULT_BODY_DECOMPRESS_FAILED);
-	BIND_ENUM_CONSTANT(RESULT_REQUEST_FAILED);
-	BIND_ENUM_CONSTANT(RESULT_DOWNLOAD_FILE_CANT_OPEN);
-	BIND_ENUM_CONSTANT(RESULT_DOWNLOAD_FILE_WRITE_ERROR);
-	BIND_ENUM_CONSTANT(RESULT_REDIRECT_LIMIT_REACHED);
-	BIND_ENUM_CONSTANT(RESULT_TIMEOUT);
-}
-
-HTTPRequest::HTTPRequest() {
-	client = Ref<HTTPClient>(HTTPClient::create());
-	tls_options = TLSOptions::client();
-	timer = memnew(Timer);
-	timer->set_one_shot(true);
-	timer->connect("timeout", callable_mp(this, &HTTPRequest::_timeout));
-	add_child(timer);
+	ClassDB::bind_method(D_METHOD("t2i", "value"), &StableDiffusion::t2i);
 }

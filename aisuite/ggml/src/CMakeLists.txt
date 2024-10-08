@@ -1,12 +1,4 @@
-add_compile_definitions(GGML_SCHED_MAX_COPIES=${GGML_SCHED_MAX_COPIES})
-
-# enable libstdc++ assertions for debug builds
-if (CMAKE_SYSTEM_NAME MATCHES "Linux")
-    add_compile_definitions($<$<CONFIG:Debug>:_GLIBCXX_ASSERTIONS>)
-endif()
-
-unset(GGML_EXTRA_LIBS_PRIVATE)
-unset(GGML_EXTRA_LIBS_PUBLIC)
+add_compile_definitions(GGML_SCHED_MAX_COPIES="4")
 
 if (GGML_BLAS)
     #if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
@@ -175,19 +167,6 @@ if (GGML_VULKAN)
     else()
         message(WARNING "Vulkan not found")
     endif()
-endif()
-
-if (GGML_CCACHE)
-    find_program(GGML_CCACHE_FOUND ccache)
-
-    if (GGML_CCACHE_FOUND)
-        # TODO: should not be set globally
-        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-        set(ENV{CCACHE_SLOPPINESS} time_macros)
-        message(STATUS "ccache found, compilation results will be cached. Disable with GGML_CCACHE=OFF.")
-    else()
-        message(STATUS "Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF")
-    endif ()
 endif()
 
 # this version of Apple ld64 is buggy
