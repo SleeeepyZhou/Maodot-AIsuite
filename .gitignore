@@ -1,6 +1,7 @@
 .vs/
 .test/
 
+__pycache__/
 # Prerequisites
 *.d
 

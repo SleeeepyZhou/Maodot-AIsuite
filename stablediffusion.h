@@ -15,7 +15,7 @@ protected:
 public:
 	StableDiffusion();
 	~StableDiffusion();
-	Ref<Texture2D> t2i(String model_path, String prompt);
+	Ref<Image> t2i(String model_path, String prompt);
 };
 
 #endif // STABLE_DIFFUSION_H

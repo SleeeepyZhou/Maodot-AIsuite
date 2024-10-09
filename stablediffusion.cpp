@@ -129,49 +129,7 @@ struct SDParams {
     int upscale_repeats           = 1;
 };
 
-void print_params(SDParams params) {
-    printf("Option: \n");
-    printf("    n_threads:         %d\n", params.n_threads);
-    printf("    mode:              %s\n", modes_str[params.mode]);
-    printf("    model_path:        %s\n", params.model_path.c_str());
-    printf("    wtype:             %s\n", params.wtype < SD_TYPE_COUNT ? sd_type_name(params.wtype) : "unspecified");
-    printf("    clip_l_path:       %s\n", params.clip_l_path.c_str());
-    printf("    t5xxl_path:        %s\n", params.t5xxl_path.c_str());
-    printf("    diffusion_model_path:   %s\n", params.diffusion_model_path.c_str());
-    printf("    vae_path:          %s\n", params.vae_path.c_str());
-    printf("    taesd_path:        %s\n", params.taesd_path.c_str());
-    printf("    esrgan_path:       %s\n", params.esrgan_path.c_str());
-    printf("    controlnet_path:   %s\n", params.controlnet_path.c_str());
-    printf("    embeddings_path:   %s\n", params.embeddings_path.c_str());
-    printf("    stacked_id_embeddings_path:   %s\n", params.stacked_id_embeddings_path.c_str());
-    printf("    input_id_images_path:   %s\n", params.input_id_images_path.c_str());
-    printf("    style ratio:       %.2f\n", params.style_ratio);
-    printf("    normalize input image :  %s\n", params.normalize_input ? "true" : "false");
-    printf("    output_path:       %s\n", params.output_path.c_str());
-    printf("    init_img:          %s\n", params.input_path.c_str());
-    printf("    control_image:     %s\n", params.control_image_path.c_str());
-    printf("    clip on cpu:       %s\n", params.clip_on_cpu ? "true" : "false");
-    printf("    controlnet cpu:    %s\n", params.control_net_cpu ? "true" : "false");
-    printf("    vae decoder on cpu:%s\n", params.vae_on_cpu ? "true" : "false");
-    printf("    strength(control): %.2f\n", params.control_strength);
-    printf("    prompt:            %s\n", params.prompt.c_str());
-    printf("    negative_prompt:   %s\n", params.negative_prompt.c_str());
-    printf("    min_cfg:           %.2f\n", params.min_cfg);
-    printf("    cfg_scale:         %.2f\n", params.cfg_scale);
-    printf("    guidance:          %.2f\n", params.guidance);
-    printf("    clip_skip:         %d\n", params.clip_skip);
-    printf("    width:             %d\n", params.width);
-    printf("    height:            %d\n", params.height);
-    printf("    sample_method:     %s\n", sample_method_str[params.sample_method]);
-    printf("    schedule:          %s\n", schedule_str[params.schedule]);
-    printf("    sample_steps:      %d\n", params.sample_steps);
-    printf("    strength(img2img): %.2f\n", params.strength);
-    printf("    rng:               %s\n", rng_type_to_str[params.rng_type]);
-    printf("    seed:              %ld\n", params.seed);
-    printf("    batch_count:       %d\n", params.batch_count);
-    printf("    vae_tiling:        %s\n", params.vae_tiling ? "true" : "false");
-    printf("    upscale_repeats:   %d\n", params.upscale_repeats);
-}
+/*
 void parse_args(int argc, const char** argv, SDParams& params) {
     bool invalid_arg = false;
     std::string arg;
@@ -536,6 +494,7 @@ void parse_args(int argc, const char** argv, SDParams& params) {
         }
     }
 }
+*/
 
 static std::string sd_basename(const std::string& path) {
     size_t pos = path.find_last_of('/');
@@ -549,7 +508,7 @@ static std::string sd_basename(const std::string& path) {
     return path;
 }
 
-static Ref<Texture2D> convert_to_texture2d(const sd_image_t& sd_image) {
+static Ref<Image> convert_to_image(const sd_image_t& sd_image) {
         Image::Format format;
         if (sd_image.channel == 3) {
             format = Image::FORMAT_RGB8;
@@ -559,19 +518,17 @@ static Ref<Texture2D> convert_to_texture2d(const sd_image_t& sd_image) {
             ERR_PRINT("Unsupported image format. Only RGB or RGBA are supported.");
             return Ref<Texture2D>();
         }
+        
+        CowData<uint8_t>::Size data_size = static_cast<CowData<uint8_t>::Size>(sd_image.width * sd_image.height * sd_image.channel);
+        Vector<uint8_t> image_data;
+        image_data.resize(data_size);
+        for (int i = 0; i < data_size; i++) {
+            image_data.set(i, sd_image.data[i]);
+        }
 
-        Ref<Image> img = memnew(Image);
-        img->create(sd_image.width, sd_image.height, false, format);
+        Ref<Image> img = Image::create_from_data(sd_image.width, sd_image.height, false, format, image_data);
 
-        int data_size = sd_image.width * sd_image.height * sd_image.channel;
-        img->lock();
-        memcpy(img->get_data().ptrw(), sd_image.data, data_size);
-        img->unlock();
-
-        Ref<Texture2D> texture = memnew(Texture2D);
-        texture->create_from_image(img);
-
-        return texture;
+        return img;
     }
 
 void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
@@ -617,7 +574,13 @@ void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
 }
 
 
-Ref<Texture2D> StableDiffusion::t2i(std::string model_path, std::string prompt){
+Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
+    SDParams params;
+    
+    params.model_path = model_path.utf8().get_data();;
+    params.prompt = prompt.utf8().get_data();;
+    
+    /*
     const char* arr[] = { 
         "",
         "-m",
@@ -636,10 +599,10 @@ Ref<Texture2D> StableDiffusion::t2i(std::string model_path, std::string prompt){
         argv[i] = arg;
     }
     argv[argc] = nullptr;
+	parse_args(argc, argv, params);
+    */
 
-	SDParams params;
-	
-    parse_args(argc, argv, params);
+   
     sd_set_log_callback(sd_log_cb, (void*)&params);
 	
 	sd_ctx_t* sd_ctx = new_sd_ctx(params.model_path.c_str(),
@@ -692,8 +655,8 @@ Ref<Texture2D> StableDiffusion::t2i(std::string model_path, std::string prompt){
         free_sd_ctx(sd_ctx);
         return NULL;
     }
-	Ref<Texture2D> texture;
-	texture = SDImageConverter::convert_to_texture2d(results);
+	Ref<Image> texture;
+	texture = convert_to_image(*results);
 	
 	free(results);
     free_sd_ctx(sd_ctx);
