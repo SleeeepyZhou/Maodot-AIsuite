@@ -17,8 +17,9 @@ if env["builtin_aisuite"]:
     thirdparty_dir = "#modules/ai_suite/aisuite/"
     env_aisuite.Prepend(
         CPPPATH=[
-            "sd/",
             thirdparty_dir,
+            thirdparty_dir + "sd/",
+            "sd_node/",
         ]
     )
 
@@ -92,7 +93,9 @@ env_aisuite.add_source_files(module_obj, "*.cpp")
 env.modules_sources += module_obj
 
 Export("env_aisuite")
-SConscript("sd/SCsub")
+SConscript(thirdparty_dir + "sd/SCsub")
+
+SConscript("sd_node/SCsub")
 
 # Needed to force rebuilding the module files when the thirdparty library is updated.
 env.Depends(module_obj, thirdparty_obj)

@@ -1,6 +1,6 @@
 #include "ai_object.h"
 #include "scene/main/node.h"
-#include "scene/resources/texture.h"
+#include "core/io/image.h"
 
 #ifndef STABLE_DIFFUSION_H
 #define STABLE_DIFFUSION_H
