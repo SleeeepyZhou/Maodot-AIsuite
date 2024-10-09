@@ -14,7 +14,7 @@ env_aisuite = env_modules.Clone()
 thirdparty_obj = []
 
 if env["builtin_aisuite"]:
-    thirdparty_dir = "aisuite/"
+    thirdparty_dir = "#modules/ai_suite/aisuite/"
     env_aisuite.Prepend(
         CPPPATH=[
             "sd/",
