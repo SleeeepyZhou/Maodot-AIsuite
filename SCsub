@@ -9,26 +9,21 @@ env_aisuite = env_modules.Clone()
 # env_aisuite.AppendUnique(CCFLAGS=['-O2'])
 # env_aisuite.AppendUnique(CXXFLAGS=['/std:c++14'])
 
-
-# Thirdparty source files
 thirdparty_obj = []
 
 if env["builtin_aisuite"]:
+    o_dir = "#modules/ai_suite/"
     thirdparty_dir = "#modules/ai_suite/aisuite/"
     env_aisuite.Prepend(
         CPPPATH=[
+            o_dir,
             thirdparty_dir,
-            thirdparty_dir + "sd/",
-            "sd_node/",
         ]
     )
 
     env_aisuite.disable_warnings()
 
-    env_aisuite.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
-
     # GGML loader
-
     import os
     import sys
 
@@ -41,7 +36,6 @@ if env["builtin_aisuite"]:
         env_aisuite.Append(CPPDEFINES=['HAVE_BUGGY_APPLE_LINKER'])
 
     env_aisuite.AppendUnique(CPPDEFINES=["GGML_MAX_NAME=128"])
-
     env_aisuite.Append(
         CPPPATH=[
             thirdparty_dir + "ggml/src/",
@@ -56,9 +50,11 @@ if env["builtin_aisuite"]:
     env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-aarch64.c")
     # env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-blas.cpp")
 
+    # SD
+    env_aisuite.add_source_files(thirdparty_obj, thirdparty_dir + "zip.c")
+
     # Use Vulkan as backend stable-diffusion
     env_aisuite.AppendUnique(CPPDEFINES=["SD_USE_VULKAN"])
-
     env_aisuite.AppendUnique(CPPDEFINES=["GGML_USE_VULKAN"]) 
     env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan.cpp")
 
@@ -81,21 +77,34 @@ if env["builtin_aisuite"]:
                 ["./" + str(vulkan_shaders_gen[0]) + f' --input-dir {vk_shader_dir} --output-dir {vk_output_dir} --target-hpp ggml-vulkan-shaders.hpp --target-cpp ggml-vulkan-shaders.cpp --no-clean']
             )
     '''
+    
     env_aisuite.add_source_files(thirdparty_obj, thirdparty_ggml_dir + "ggml-vulkan-shaders.cpp")
+
 
     env.modules_sources += thirdparty_obj
 
+    # Node
 
-# Godot source files
+    # StableDiffusion
+    Export("env_aisuite")
+    env_aisuite.Append(
+            CPPPATH=[
+                o_dir + "sd_node/",
+                o_dir + "sd_node/sd/", 
+            ]
+        )
+    SConscript("sd_node/SCsub")
+    SConscript("sd_node/sd/SCsub")
+
+    # LLM
+
+    # VLM
+
+# Object Node source files
 
 module_obj = []
 env_aisuite.add_source_files(module_obj, "*.cpp")
 env.modules_sources += module_obj
-
-Export("env_aisuite")
-SConscript(thirdparty_dir + "sd/SCsub")
-
-SConscript("sd_node/SCsub")
 
 # Needed to force rebuilding the module files when the thirdparty library is updated.
 env.Depends(module_obj, thirdparty_obj)
