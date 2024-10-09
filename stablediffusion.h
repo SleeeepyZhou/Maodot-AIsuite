@@ -1,10 +1,9 @@
-#ifndef STABLE_DIFFUSION_H
-#define STABLE_DIFFUSION_H
-
 #include "ai_object.h"
-
 #include "scene/main/node.h"
 #include "scene/resources/texture.h"
+
+#ifndef STABLE_DIFFUSION_H
+#define STABLE_DIFFUSION_H
 
 class StableDiffusion : public AIObject {
 	GDCLASS(StableDiffusion, AIObject);

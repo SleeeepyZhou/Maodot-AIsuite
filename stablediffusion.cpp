@@ -25,8 +25,6 @@
 
 #include "stablediffusion.h"
 
-#include "core/variant/dictionary.h"
-
 #include "core/io/image.h"
 #include "scene/resources/texture.h"
 
@@ -652,7 +650,11 @@ Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
 }
 
 void StableDiffusion::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("t2i", "value"), &StableDiffusion::t2i);
+	ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
+    // ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
+    //      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
+    
+    ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Ref<Image>, "result")));
 }
 
 StableDiffusion::StableDiffusion() {
