@@ -35,7 +35,7 @@ sd_ctx_t* new_sd_ctx(const char* model_path,
                             bool keep_vae_on_cpu);
 */
 Error StableDiffusion::load_model(String model_path) {
-    const char* p_model_path = model_path.utf8().get_data()
+    const char* p_model_path = model_path.utf8().get_data();
     
     sd_ctx_t* sd_ctx = new_sd_ctx(p_model_path,
                                   params.clip_l_path.c_str(),
