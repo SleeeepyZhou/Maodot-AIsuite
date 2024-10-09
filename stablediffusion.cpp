@@ -494,42 +494,6 @@ void parse_args(int argc, const char** argv, SDParams& params) {
         }
     }
 }
-*/
-
-static std::string sd_basename(const std::string& path) {
-    size_t pos = path.find_last_of('/');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    pos = path.find_last_of('\\');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    return path;
-}
-
-static Ref<Image> convert_to_image(const sd_image_t& sd_image) {
-        Image::Format format;
-        if (sd_image.channel == 3) {
-            format = Image::FORMAT_RGB8;
-        } else if (sd_image.channel == 4) {
-            format = Image::FORMAT_RGBA8;
-        } else {
-            ERR_PRINT("Unsupported image format. Only RGB or RGBA are supported.");
-            return Ref<Texture2D>();
-        }
-        
-        CowData<uint8_t>::Size data_size = static_cast<CowData<uint8_t>::Size>(sd_image.width * sd_image.height * sd_image.channel);
-        Vector<uint8_t> image_data;
-        image_data.resize(data_size);
-        for (int i = 0; i < data_size; i++) {
-            image_data.set(i, sd_image.data[i]);
-        }
-
-        Ref<Image> img = Image::create_from_data(sd_image.width, sd_image.height, false, format, image_data);
-
-        return img;
-    }
 
 void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
     SDParams* params = (SDParams*)data;
@@ -558,20 +522,45 @@ void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
             tag_color = 31;
             level_str = "ERROR";
             break;
-        default: /* Potential future-proofing */
+        default: // Potential future-proofing
             tag_color = 33;
             level_str = "?????";
             break;
     }
 
     if (params->color == true) {
-        fprintf(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
+        print_line(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
     } else {
-        fprintf(out_stream, "[%-5s] ", level_str);
+        print_line(out_stream, "[%-5s] ", level_str);
     }
     fputs(log, out_stream);
     fflush(out_stream);
 }
+
+*/
+
+static Ref<Image> convert_to_image(const sd_image_t& sd_image) {
+        Image::Format format;
+        if (sd_image.channel == 3) {
+            format = Image::FORMAT_RGB8;
+        } else if (sd_image.channel == 4) {
+            format = Image::FORMAT_RGBA8;
+        } else {
+            ERR_PRINT("Unsupported image format. Only RGB or RGBA are supported.");
+            return Ref<Texture2D>();
+        }
+        
+        CowData<uint8_t>::Size data_size = static_cast<CowData<uint8_t>::Size>(sd_image.width * sd_image.height * sd_image.channel);
+        Vector<uint8_t> image_data;
+        image_data.resize(data_size);
+        for (int i = 0; i < data_size; i++) {
+            image_data.set(i, sd_image.data[i]);
+        }
+
+        Ref<Image> img = Image::create_from_data(sd_image.width, sd_image.height, false, format, image_data);
+
+        return img;
+    }
 
 
 Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
@@ -600,11 +589,9 @@ Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
     }
     argv[argc] = nullptr;
 	parse_args(argc, argv, params);
-    */
-
-   
+    
     sd_set_log_callback(sd_log_cb, (void*)&params);
-	
+	*/
 	sd_ctx_t* sd_ctx = new_sd_ctx(params.model_path.c_str(),
                                   params.clip_l_path.c_str(),
                                   params.t5xxl_path.c_str(),
@@ -655,6 +642,7 @@ Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
         free_sd_ctx(sd_ctx);
         return NULL;
     }
+    
 	Ref<Image> texture;
 	texture = convert_to_image(*results);
 	

@@ -6,7 +6,7 @@ Import("env_modules")
 
 env_aisuite = env_modules.Clone()
 
-env_aisuite.AppendUnique(CCFLAGS=['-O2'])
+# env_aisuite.AppendUnique(CCFLAGS=['-O2'])
 # env_aisuite.AppendUnique(CXXFLAGS=['/std:c++14'])
 
 
@@ -14,7 +14,7 @@ env_aisuite.AppendUnique(CCFLAGS=['-O2'])
 thirdparty_obj = []
 
 if env["builtin_aisuite"]:
-    thirdparty_dir = "#modules/ai_suite/aisuite/"
+    thirdparty_dir = "aisuite/"
     env_aisuite.Prepend(
         CPPPATH=[
             "sd/",
