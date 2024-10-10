@@ -1,17 +1,53 @@
-// SD Code
+/* StableDiffusion */
 #include "stable-diffusion.h"
 
-// Mod
+/* Module header */
 #include "stablediffusion.h"
-
-// Engine
-#include "core/io/image.h"
 
 StableDiffusion::StableDiffusion() {
 }
 StableDiffusion::~StableDiffusion() {
 }
 
+void StableDiffusion::set_print_log(bool p_print_log) {
+	print_log = p_print_log;
+}
+
+bool StableDiffusion::is_print_log() const {
+	return print_log;
+}
+
+void StableDiffusion::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("set_print_log", "enable"), &StableDiffusion::set_print_log);
+    ClassDB::bind_method(D_METHOD("is_print_log"), &StableDiffusion::is_print_log);
+}
+
+#include "modelloader.h"
+
+ModelLoad::ModelLoad() {
+    SDModel = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
+}
+
+ModelLoad::~ModelLoad() {
+    free_sd_ctx(SDModel);
+}
+
+void ModelLoad::load_model(String model_path) {
+    
+}
+void ModelLoad::free_model() {
+
+}
+
+void ModelLoad::_bind_methods() {
+    
+}
+
+
+	// ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
+    // ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
+    //      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
+    // ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Variant::Ref<Image>, "result")));
 /*
 sd_ctx_t* new_sd_ctx(const char* model_path,
                             const char* clip_l_path,
@@ -33,7 +69,6 @@ sd_ctx_t* new_sd_ctx(const char* model_path,
                             bool keep_clip_on_cpu,
                             bool keep_control_net_cpu,
                             bool keep_vae_on_cpu);
-*/
 Error StableDiffusion::load_model(String model_path) {
     const char* p_model_path = model_path.utf8().get_data();
     
@@ -67,11 +102,4 @@ Error StableDiffusion::load_model(String model_path) {
 Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
 
 }
-
-void StableDiffusion::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
-    // ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
-    //      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
-    
-    // ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Variant::Ref<Image>, "result")));
-}
+*/
