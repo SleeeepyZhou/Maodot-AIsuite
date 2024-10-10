@@ -20,6 +20,7 @@ bool StableDiffusion::is_print_log() const {
 void StableDiffusion::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_print_log", "enable"), &StableDiffusion::set_print_log);
     ClassDB::bind_method(D_METHOD("is_print_log"), &StableDiffusion::is_print_log);
+    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_log"), "set_print_log", "is_print_log");
 }
 
 #include "modelloader.h"
@@ -32,23 +33,52 @@ ModelLoad::~ModelLoad() {
     free_sd_ctx(SDModel);
 }
 
+void ModelLoad::set_schedule(Scheduler p_schedule) {
+	schedule = p_schedule;
+}
+
+ModelLoad::Scheduler ModelLoad::get_schedule() const {
+	return schedule;
+}
+
 void ModelLoad::load_model(String model_path) {
     
 }
-void ModelLoad::free_model() {
 
+void ModelLoad::free_model() {
+    free_sd_ctx(SDModel);
+    SDModel = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
+    if print_log {
+        print_line("Model freed")
+    } 
 }
 
 void ModelLoad::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("free_model"), &ModelLoad::free_model);
+    ClassDB::bind_method(D_METHOD("load_model", "model_path"), &ModelLoad::load_model);
+    ClassDB::bind_method(D_METHOD("set_schedule", "scheduler"), &ModelLoad::set_schedule);
+    ClassDB::bind_method(D_METHOD("get_schedule"), &ModelLoad::get_schedule);
     
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "schedule", PROPERTY_HINT_ENUM, "DEFAULT,DISCRETE,KARRAS,EXPONENTIAL,AYS,GITS,N_SCHEDULES"), "set_schedule", "get_schedule");
 }
 
 
-	// ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
-    // ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
-    //      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
-    // ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Variant::Ref<Image>, "result")));
+#include "ksampler.h"
+
+KSampler::KSampler() {
+}
+
+KSampler::~KSampler() {
+}
+
+void KSampler::_bind_methods() {
+}
 /*
+// ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
+// ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
+//      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
+// ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Variant::Ref<Image>, "result")));
+
 sd_ctx_t* new_sd_ctx(const char* model_path,
                             const char* clip_l_path,
                             const char* t5xxl_path,

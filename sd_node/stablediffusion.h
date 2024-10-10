@@ -1,8 +1,8 @@
-#include "ai_object.h"
-#include "scene/main/node.h"
-
 #ifndef STABLE_DIFFUSION_H
 #define STABLE_DIFFUSION_H
+
+#include "ai_object.h"
+#include "scene/main/node.h"
 
 class StableDiffusion : public AIObject {
 	GDCLASS(StableDiffusion, AIObject);
