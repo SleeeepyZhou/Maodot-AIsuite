@@ -15,6 +15,7 @@ public:
 private:
     sd_ctx_t* SDModel;
 	Scheduler schedule = DEFAULT;
+	String lora_path;
 
 protected:
 	static void _bind_methods();

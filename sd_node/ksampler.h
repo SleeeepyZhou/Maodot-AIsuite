@@ -9,7 +9,9 @@
 
 class KSampler : public StableDiffusion {
 	GDCLASS(KSampler, StableDiffusion);
-
+    
+    NodePath modelloader;
+    
 public:
     typedef sample_method_t SamplerName
 

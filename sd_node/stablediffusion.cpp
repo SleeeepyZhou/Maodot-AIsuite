@@ -71,8 +71,40 @@ KSampler::KSampler() {
 KSampler::~KSampler() {
 }
 
+KSampler::sampling() {
+    sd_ctx_t* ctx = /* 初始化 sd_ctx_t */;
+    if (ctx && ctx->sd) {
+        ctx->sd->sample();  // 调用 StableDiffusionGGML 类的某个方法
+    }
+}
+
+void KSampler::set_modelloader(const NodePath &p_node_a) {
+	if (a == p_node_a) {
+		return;
+	}
+/*
+	if (is_configured()) {
+		_disconnect_signals();
+	}
+
+	a = p_node_a;
+	if (Engine::get_singleton()->is_editor_hint()) {
+		// When in editor, the setter may be called as a result of node rename.
+		// It happens before the node actually changes its name, which triggers false warning.
+		callable_mp(this, &Joint2D::_update_joint).call_deferred(false);
+	} else {
+		_update_joint();
+	}
+*/
+}
+
+NodePath KSampler::get_modelloader() const {
+	return modelloader;
+}
+
 void KSampler::_bind_methods() {
 }
+
 /*
 // ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
 // ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
