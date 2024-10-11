@@ -18,9 +18,9 @@ public:
 private:
     int seed = 42;
     int steps = 10;
-    float CFG = 8.0;
+    float CFG = 8.0f;
     // float miniCFG;
-    float denoise = 1.0;
+    float denoise = 1.0f;
     SamplerName sampler_name = LCM;
     
 
