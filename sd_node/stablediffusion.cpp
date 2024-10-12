@@ -1,14 +1,31 @@
 /* StableDiffusion */
-#include "stable-diffusion.h"
+
 
 /* Module header */
+#include "stablediffusion.h"
+
+#include "modelloader.h"
+#include "vae_node.h"
+#include "ksampler.h"
+#include "latent.h"
 
 //// Base class : stablediffusion
-#include "stablediffusion.h"
+
+SDResource::SDResource() {
+}
+
+SDResource::~SDResource() {
+}
 
 StableDiffusion::StableDiffusion() {
 }
 StableDiffusion::~StableDiffusion() {
+}
+
+void StableDiffusion::printlog(String p_log) {
+    if print_log {
+        print_line(log);
+    }
 }
 
 void StableDiffusion::set_print_log(bool p_print_log) {
@@ -27,7 +44,6 @@ void StableDiffusion::_bind_methods() {
 
 
 //// modelloader
-#include "modelloader.h"
 
 /*
 
@@ -45,15 +61,28 @@ SDModelLoader
 
 */
 
-SDModel :: SDModel() {
+SDModel::SDModel() {
 
 }
 
-SDModel :: ~SDModel() {
+SDModel::~SDModel() {
 
+}
+
+void SDModel::set_model(const String &p_model_path) {
+
+}
+
+void SDModel::_set_model_path(const String &p_model_path) {
+
+}
+
+String SDModel::_get_model_path() const {
+	return String();
 }
 
 void SDModel::_bind_methods() {
+    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "_set_model_path", "_get_model_path");
 
 }
 
@@ -97,7 +126,6 @@ void SDModelLoader::_bind_methods() {
 
 
 //// ksampler
-#include "ksampler.h"
 
 /*
 
@@ -117,11 +145,11 @@ KSampler::KSampler() {
 KSampler::~KSampler() {
 }
 
-KSampler::sampling() {
-    sd_ctx_t* ctx = /* 初始化 sd_ctx_t */;
-    if (ctx && ctx->sd) {
-        ctx->sd->sample();  // 调用 StableDiffusionGGML 类的某个方法
-    }
+Latent KSampler::sampling(
+
+                            ) {
+    
+    return                             
 }
 
 void KSampler::set_modelloader(const NodePath &p_node_a) {
@@ -153,7 +181,6 @@ void KSampler::_bind_methods() {
 
 
 //// latent
-#include "latent.h"
 
 /*
 
@@ -163,11 +190,47 @@ latent
 */
 
 Latent::Latent() {
-
 }
 
 Latent::~Latent() {
+}
 
+void Latent::set_width(const int &p_width) {
+    width = p_width
+}
+
+int Latent::get_width() const {
+	return width;
+}
+
+void Latent::set_height(const int &p_height) {
+    height = p_height
+}
+
+int Latent::get_height() const {
+	return height;
+}
+
+void Latent::set_image(const Ref<Image> &p_image) {
+    input_image = p_image
+}
+
+Ref<Image> Latent::get_image() const {
+	return input_image;
+}
+
+void Latent::set_create_mode(LatentFromImage p_mode) {
+    create_mode = p_mode
+}
+
+LatentFromImage Latent::get_create_mode() const {
+	return create_mode;
+}
+
+void Latent::creat_latent() {
+}
+
+void Latent::free_latent() {
 }
 
 void Latent::_bind_methods() {
@@ -175,7 +238,6 @@ void Latent::_bind_methods() {
 }
 
 //// vae
-#include "vae_node.h"
 
 /*
 
@@ -260,3 +322,5 @@ Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
 
 }
 */
+
+

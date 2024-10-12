@@ -11,7 +11,7 @@ class KSampler : public StableDiffusion {
     NodePath modelloader;
     
 public:
-    typedef sample_method_t SamplerName
+    typedef sample_method_t SamplerName;
 
 private:
     int seed = 42;

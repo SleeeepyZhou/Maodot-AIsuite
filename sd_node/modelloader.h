@@ -8,15 +8,19 @@
 class SDModel : public SDResource {
 	GDCLASS(SDModel, SDResource);
 
+	String model_path
+
+	
+
 protected:
 	static void _bind_methods();
 
 public:
     SDModel();
     ~SDModel();
-    void set_SDModel(const StringName &p_SDModel);
-	StringName get_SDModel() const;
-
+    void set_model(const String &p_model_path);
+	void _set_model_path(const String &p_model_path);
+	String _get_model_path() const;
 };
 
 

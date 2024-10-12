@@ -24,6 +24,9 @@ protected:
 public:
 	StableDiffusion();
 	~StableDiffusion();
+	
+	void printlog(String p_log);
+
 	void set_print_log(bool p_print_log);
 	bool is_print_log() const;
 };

@@ -1,12 +1,9 @@
-#ifndef LATENT_H
-#define LATENT_H
+#ifndef COND_H
+#define COND_H
 
-#include "stablediffusion.h"
-#include "ggml.h"
-#include "core/io/image.h"
 
-class Latent : public SDResource {
-	GDCLASS(Latent, SDResource);
+class SDCond : public SDResource {
+	GDCLASS(SDCond, SDResource);
 
 public:
     enum LatentFromImage {
@@ -15,6 +12,8 @@ public:
 	};
 
 private:
+    int clip_skip = -1;
+
     int width = 512;
 	int height = 512;
     Ref<Image> input_image;
@@ -41,4 +40,4 @@ public:
 
 };
 
-#endif // LATENT_H
+#endif // COND_H
