@@ -2,10 +2,8 @@
 #define K_SAMPLER_H
 
 #include "stablediffusion.h"
-#include "scene/main/node.h"
 
 #include "stable-diffusion.h"
-
 
 class KSampler : public StableDiffusion {
 	GDCLASS(KSampler, StableDiffusion);

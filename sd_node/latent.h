@@ -1,16 +1,14 @@
 #ifndef LATENT_H
 #define LATENT_H
 
-#include "core/io/resource.h"
-
 #include "ggml.h"
 
 struct latent_image {
     ggml_tensor* tensor = NULL;
 };
 
-class Latent : public Resource {
-	GDCLASS(Latent, Resource);
+class Latent : public SDResource {
+	GDCLASS(Latent, SDResource);
 
     Size2 size;
     StringName latent;

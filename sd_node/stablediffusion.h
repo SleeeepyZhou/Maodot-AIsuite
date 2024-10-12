@@ -2,7 +2,17 @@
 #define STABLE_DIFFUSION_H
 
 #include "ai_object.h"
-#include "scene/main/node.h"
+
+class SDResource : public AIResource {
+	GDCLASS(SDResource, AIResource);
+
+protected:
+	static void _bind_methods();
+
+public:
+    SDResource();
+    ~SDResource();
+};
 
 class StableDiffusion : public AIObject {
 	GDCLASS(StableDiffusion, AIObject);

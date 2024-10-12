@@ -2,12 +2,26 @@
 #define MODEL_LOADER_H
 
 #include "stablediffusion.h"
-#include "scene/main/node.h"
 
 #include "stable-diffusion.h"
 
-class ModelLoad : public StableDiffusion {
-	GDCLASS(ModelLoad, StableDiffusion);
+class SDModel : public SDResource {
+	GDCLASS(SDModel, SDResource);
+
+protected:
+	static void _bind_methods();
+
+public:
+    SDModel();
+    ~SDModel();
+    void set_SDModel(const StringName &p_SDModel);
+	StringName get_SDModel() const;
+
+};
+
+
+class SDModelLoader : public StableDiffusion {
+	GDCLASS(SDModelLoader, StableDiffusion);
 
 public:
 	typedef schedule_t Scheduler;
@@ -21,8 +35,8 @@ protected:
 	static void _bind_methods();
 
 public:
-	ModelLoad();
-	~ModelLoad();
+	SDModelLoader();
+	~SDModelLoader();
 	void load_model(String model_path);
     void free_model();
 	void set_schedule(Scheduler p_schedule);

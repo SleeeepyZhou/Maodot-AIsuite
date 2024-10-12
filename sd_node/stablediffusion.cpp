@@ -2,6 +2,8 @@
 #include "stable-diffusion.h"
 
 /* Module header */
+
+//// Base class : stablediffusion
 #include "stablediffusion.h"
 
 StableDiffusion::StableDiffusion() {
@@ -23,29 +25,60 @@ void StableDiffusion::_bind_methods() {
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_log"), "set_print_log", "is_print_log");
 }
 
+
+//// modelloader
 #include "modelloader.h"
 
-ModelLoad::ModelLoad() {
+/*
+
+Res
+SDModel
+
+Node
+SDModelLoader
+    in  lora
+        model_path
+    
+    out SDModel
+        VAE
+        _CLIP
+
+*/
+
+SDModel :: SDModel() {
+
+}
+
+SDModel :: ~SDModel() {
+
+}
+
+void SDModel::_bind_methods() {
+
+}
+
+
+SDModelLoader::SDModelLoader() {
     SDModel = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
 }
 
-ModelLoad::~ModelLoad() {
+SDModelLoader::~SDModelLoader() {
     free_sd_ctx(SDModel);
 }
 
-void ModelLoad::set_schedule(Scheduler p_schedule) {
+void SDModelLoader::set_schedule(Scheduler p_schedule) {
 	schedule = p_schedule;
 }
 
-ModelLoad::Scheduler ModelLoad::get_schedule() const {
+SDModelLoader::Scheduler SDModelLoader::get_schedule() const {
 	return schedule;
 }
 
-void ModelLoad::load_model(String model_path) {
+void SDModelLoader::load_model(String model_path) {
     
 }
 
-void ModelLoad::free_model() {
+void SDModelLoader::free_model() {
     free_sd_ctx(SDModel);
     SDModel = (sd_ctx_t*)malloc(sizeof(sd_ctx_t));
     if print_log {
@@ -53,17 +86,30 @@ void ModelLoad::free_model() {
     } 
 }
 
-void ModelLoad::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("free_model"), &ModelLoad::free_model);
-    ClassDB::bind_method(D_METHOD("load_model", "model_path"), &ModelLoad::load_model);
-    ClassDB::bind_method(D_METHOD("set_schedule", "scheduler"), &ModelLoad::set_schedule);
-    ClassDB::bind_method(D_METHOD("get_schedule"), &ModelLoad::get_schedule);
+void SDModelLoader::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("free_model"), &SDModelLoader::free_model);
+    ClassDB::bind_method(D_METHOD("load_model", "model_path"), &SDModelLoader::load_model);
+    ClassDB::bind_method(D_METHOD("set_schedule", "scheduler"), &SDModelLoader::set_schedule);
+    ClassDB::bind_method(D_METHOD("get_schedule"), &SDModelLoader::get_schedule);
     
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "schedule", PROPERTY_HINT_ENUM, "DEFAULT,DISCRETE,KARRAS,EXPONENTIAL,AYS,GITS,N_SCHEDULES"), "set_schedule", "get_schedule");
 }
 
 
+//// ksampler
 #include "ksampler.h"
+
+/*
+
+Node
+KSampler
+        latent
+    in  context
+        sdmodel
+
+    out latent
+
+*/
 
 KSampler::KSampler() {
 }
@@ -103,6 +149,55 @@ NodePath KSampler::get_modelloader() const {
 }
 
 void KSampler::_bind_methods() {
+}
+
+
+//// latent
+#include "latent.h"
+
+/*
+
+Res
+latent
+
+*/
+
+Latent::Latent() {
+
+}
+
+Latent::~Latent() {
+
+}
+
+void Latent::_bind_methods() {
+
+}
+
+//// vae
+#include "vae_node.h"
+
+/*
+
+Node
+VAE
+        bool    decode
+    in  VAE     AutoEncoderKL / TinyAutoEncoder
+        latent  /   image
+    out image   /   latent
+
+*/
+
+VAE::VAE() {
+
+}
+
+VAE::~VAE() {
+
+}
+
+void VAE::_bind_methods() {
+
 }
 
 /*

@@ -6,13 +6,13 @@
 #include "vae.hpp"
 #include "tae.hpp"
 
+
+
 class VAE : public StableDiffusion {
 	GDCLASS(VAE, StableDiffusion);
 
-public:
 	typedef schedule_t Scheduler;
 
-private:
     sd_ctx_t* SDModel;
 	Scheduler schedule = DEFAULT;
 	String lora_path;
