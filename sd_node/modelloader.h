@@ -3,14 +3,22 @@
 
 #include "stablediffusion.h"
 
-#include "stable-diffusion.h"
-
 class SDModel : public SDResource {
 	GDCLASS(SDModel, SDResource);
 
 	String model_path
 
-	
+public:
+    enum SDVersion {
+        VERSION_SD1,
+        VERSION_SD2,
+        VERSION_SDXL,
+        VERSION_SVD,
+        VERSION_SD3_2B,
+        VERSION_FLUX_DEV,
+        VERSION_FLUX_SCHNELL,
+        VERSION_COUNT,
+    };
 
 protected:
 	static void _bind_methods();
@@ -23,7 +31,6 @@ public:
 	String _get_model_path() const;
 };
 
-
 class SDModelLoader : public StableDiffusion {
 	GDCLASS(SDModelLoader, StableDiffusion);
 
@@ -35,16 +42,20 @@ private:
 	Scheduler schedule = DEFAULT;
 	String lora_path;
 
+	Dictionary model_list;
+
 protected:
 	static void _bind_methods();
 
 public:
 	SDModelLoader();
 	~SDModelLoader();
-	void load_model(String model_path);
-    void free_model();
 	void set_schedule(Scheduler p_schedule);
 	Scheduler get_schedule() const;
+	
+	void load_model(String model_path);
+    void free_model();
+
 };
 
 #endif // MODEL_LOADER_H

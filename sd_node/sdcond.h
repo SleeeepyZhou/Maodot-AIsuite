@@ -1,6 +1,8 @@
 #ifndef COND_H
 #define COND_H
 
+#include "stablediffusion.h"
+
 
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);

@@ -3,15 +3,25 @@
 
 #include "stablediffusion.h"
 
-#include "stable-diffusion.h"
-
 class KSampler : public StableDiffusion {
 	GDCLASS(KSampler, StableDiffusion);
     
     NodePath modelloader;
     
 public:
-    typedef sample_method_t SamplerName;
+    enum SamplerName {
+        EULER_A,
+        EULER,
+        HEUN,
+        DPM2,
+        DPMPP2S_A,
+        DPMPP2M,
+        DPMPP2Mv2,
+        IPNDM,
+        IPNDM_V,
+        LCM,
+        N_SAMPLE_METHODS
+    };
 
 private:
     int seed = 42;
@@ -28,12 +38,8 @@ protected:
 public:
 	KSampler();
 	~KSampler();
+    void sample(Latent init_latent);
     
 };
 
 #endif // K_SAMPLER_H
-
-	// Ref<Image> t2i(String model_path, String prompt);
- /* #include "core/io/image.h"
-	Ref<Image> t2i(String model_path, String prompt);
-    */

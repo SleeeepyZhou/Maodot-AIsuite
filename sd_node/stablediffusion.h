@@ -16,7 +16,8 @@ public:
 
 class StableDiffusion : public AIObject {
 	GDCLASS(StableDiffusion, AIObject);
-	bool print_log = false
+
+	bool print_log = false;
 
 protected:
 	static void _bind_methods();
@@ -25,7 +26,7 @@ public:
 	StableDiffusion();
 	~StableDiffusion();
 	
-	void printlog(String p_log);
+	void printlog(String out_log);
 
 	void set_print_log(bool p_print_log);
 	bool is_print_log() const;

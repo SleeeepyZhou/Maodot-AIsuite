@@ -1,10 +1,11 @@
 /* StableDiffusion */
-
+#include "ggml_extend.hpp"
 
 /* Module header */
 #include "stablediffusion.h"
 
 #include "modelloader.h"
+#include "sdcond.h"
 #include "vae_node.h"
 #include "ksampler.h"
 #include "latent.h"
@@ -13,7 +14,6 @@
 
 SDResource::SDResource() {
 }
-
 SDResource::~SDResource() {
 }
 
@@ -22,9 +22,9 @@ StableDiffusion::StableDiffusion() {
 StableDiffusion::~StableDiffusion() {
 }
 
-void StableDiffusion::printlog(String p_log) {
-    if print_log {
-        print_line(log);
+void StableDiffusion::printlog(String out_log) {
+    if (print_log) {
+        print_line(out_log);
     }
 }
 
@@ -62,7 +62,6 @@ SDModelLoader
 */
 
 SDModel::SDModel() {
-
 }
 
 SDModel::~SDModel() {
@@ -145,13 +144,6 @@ KSampler::KSampler() {
 KSampler::~KSampler() {
 }
 
-Latent KSampler::sampling(
-
-                            ) {
-    
-    return                             
-}
-
 void KSampler::set_modelloader(const NodePath &p_node_a) {
 	if (a == p_node_a) {
 		return;
@@ -176,6 +168,10 @@ NodePath KSampler::get_modelloader() const {
 	return modelloader;
 }
 
+void KSampler::sample(Latent init_latent) {
+}
+
+
 void KSampler::_bind_methods() {
 }
 
@@ -191,8 +187,9 @@ latent
 
 Latent::Latent() {
 }
-
 Latent::~Latent() {
+    ggml_free(work_ctx);
+    printlog(vformat("Work context free."))
 }
 
 void Latent::set_width(const int &p_width) {
@@ -211,23 +208,54 @@ int Latent::get_height() const {
 	return height;
 }
 
-void Latent::set_image(const Ref<Image> &p_image) {
-    input_image = p_image
+void Latent::create_latent(SDVersion version) {
+    struct ggml_init_params params;
+    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
+    if (version == VERSION_SD3_2B) {
+        params.mem_size *= 3;
+    }
+    if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+        params.mem_size *= 4;
+    }
+    if (sd_ctx->sd->stacked_id) {
+        params.mem_size += static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
+    }
+    params.mem_size += width * height * 3 * sizeof(float);
+    params.mem_size *= batch_count;
+    params.mem_buffer = NULL;
+    params.no_alloc   = false;
+    // LOG_DEBUG("mem_size %u ", params.mem_size);
+
+    work_ctx = ggml_init(params);
+    if (!work_ctx) {
+        ERR_PRINT("Context create failed");
+        return NULL;
+    }
+
+    int C = 4;
+    if (version == VERSION_SD3_2B) {
+        C = 16;
+    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+        C = 16;
+    }
+    int W                    = width / 8;
+    int H                    = height / 8;
+    ggml_tensor* init_latent = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
+    if (version == VERSION_SD3_2B) {
+        ggml_set_f32(init_latent, 0.0609f);
+    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+        ggml_set_f32(init_latent, 0.1159f);
+    } else {
+        ggml_set_f32(init_latent, 0.f);
+    }
 }
 
-Ref<Image> Latent::get_image() const {
-	return input_image;
+ggml_tensor *Latent::get_latent() const {
+	return latent;
 }
 
-void Latent::set_create_mode(LatentFromImage p_mode) {
-    create_mode = p_mode
-}
-
-LatentFromImage Latent::get_create_mode() const {
-	return create_mode;
-}
-
-void Latent::creat_latent() {
+ggml_context *Latent::get_work_ctx() const {
+	return work_ctx;
 }
 
 void Latent::free_latent() {
@@ -250,77 +278,132 @@ VAE
 
 */
 
-VAE::VAE() {
+VAEModel::VAEModel() {
+}
 
+VAEModel::~VAEModel() {
+}
+
+VAE::VAE() {
 }
 
 VAE::~VAE() {
 
 }
 
+void VAE::set_in_image(const Ref<Image> &p_image) {
+    input_image = p_image
+}
+
+Ref<Image> VAE::get_in_image() const {
+	return input_image;
+}
+
+// ldm.models.diffusion.ddpm.LatentDiffusion.get_first_stage_encoding
+ggml_tensor* VAE::get_first_stage_encoding(ggml_context* work_ctx, ggml_tensor* moments) {
+    // ldm.modules.distributions.distributions.DiagonalGaussianDistribution.sample
+    ggml_tensor* latent       = ggml_new_tensor_4d(work_ctx, moments->type, moments->ne[0], moments->ne[1], moments->ne[2] / 2, moments->ne[3]);
+    struct ggml_tensor* noise = ggml_dup_tensor(work_ctx, latent);
+    ggml_tensor_set_f32_randn(noise, rng);
+    // noise = load_tensor_from_file(work_ctx, "noise.bin");
+    {
+        float mean   = 0;
+        float logvar = 0;
+        float value  = 0;
+        float std_   = 0;
+        for (int i = 0; i < latent->ne[3]; i++) {
+            for (int j = 0; j < latent->ne[2]; j++) {
+                for (int k = 0; k < latent->ne[1]; k++) {
+                    for (int l = 0; l < latent->ne[0]; l++) {
+                        mean   = ggml_tensor_get_f32(moments, l, k, j, i);
+                        logvar = ggml_tensor_get_f32(moments, l, k, j + (int)latent->ne[2], i);
+                        logvar = std::max(-30.0f, std::min(logvar, 20.0f));
+                        std_   = std::exp(0.5f * logvar);
+                        value  = mean + std_ * ggml_tensor_get_f32(noise, l, k, j, i);
+                        value  = value * scale_factor;
+                        // printf("%d %d %d %d -> %f\n", i, j, k, l, value);
+                        ggml_tensor_set_f32(latent, value, l, k, j, i);
+                    }
+                }
+            }
+        }
+    }
+    return latent;
+}
+
+ggml_tensor* VAE::compute_first_stage(ggml_context* work_ctx, ggml_tensor* x, bool decode) {
+    int64_t W = x->ne[0];
+    int64_t H = x->ne[1];
+    int64_t C = 8;
+    if (use_tiny_autoencoder) {
+        C = 4;
+    } else {
+        if (version == VERSION_SD3_2B) {
+            C = 32;
+        } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+            C = 32;
+        }
+    }
+    ggml_tensor* result = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32,
+                                                decode ? (W * 8) : (W / 8),  // width
+                                                decode ? (H * 8) : (H / 8),  // height
+                                                decode ? 3 : C,
+                                                x->ne[3]);  // channels
+    int64_t t0          = ggml_time_ms();
+    if (!use_tiny_autoencoder) {
+        if (decode) {
+            ggml_tensor_scale(x, 1.0f / scale_factor);
+        } else {
+            ggml_tensor_scale_input(x);
+        }
+        if (vae_tiling && decode) {  // TODO: support tiling vae encode
+            // split latent in 32x32 tiles and compute in several steps
+            auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
+                first_stage_model->compute(n_threads, in, decode, &out);
+            };
+            sd_tiling(x, result, 8, 32, 0.5f, on_tiling);
+        } else {
+            first_stage_model->compute(n_threads, x, decode, &result);
+        }
+        first_stage_model->free_compute_buffer();
+        if (decode) {
+            ggml_tensor_scale_output(result);
+        }
+    } else {
+        if (vae_tiling && decode) {  // TODO: support tiling vae encode
+            // split latent in 64x64 tiles and compute in several steps
+            auto on_tiling = [&](ggml_tensor* in, ggml_tensor* out, bool init) {
+                tae_first_stage->compute(n_threads, in, decode, &out);
+            };
+            sd_tiling(x, result, 8, 64, 0.5f, on_tiling);
+        } else {
+            tae_first_stage->compute(n_threads, x, decode, &result);
+        }
+        tae_first_stage->free_compute_buffer();
+    }
+
+    int64_t t1 = ggml_time_ms();
+    LOG_DEBUG("computing vae [mode: %s] graph completed, taking %.2fs", decode ? "DECODE" : "ENCODE", (t1 - t0) * 1.0f / 1000);
+    if (decode) {
+        ggml_tensor_clamp(result, 0.0f, 1.0f);
+    }
+    return result;
+}
+
+ggml_tensor* VAE::encode_first_stage(Latent latent) {
+    struct ggml_context* work_ctx = latent.get_work_ctx();
+    ggml_tensor* x = latent.get_latent();
+    return compute_first_stage(work_ctx, x, false);
+}
+
+ggml_tensor* VAE::decode_first_stage(Latent latent) {
+    struct ggml_context* work_ctx = latent.get_work_ctx();
+    ggml_tensor* x = latent.get_latent();
+    return compute_first_stage(work_ctx, x, true);
+}
+
+
 void VAE::_bind_methods() {
 
 }
-
-/*
-// ClassDB::bind_method(D_METHOD("t2i", "model_path", "prompt"), &StableDiffusion::t2i);
-// ClassDB::bind_method(D_METHOD("request", "url", "custom_headers", "method", "request_data"), 
-//      &HTTPRequest::request, DEFVAL(PackedStringArray()), DEFVAL(HTTPClient::METHOD_GET), DEFVAL(String()));
-// ADD_SIGNAL(MethodInfo("sampling_done", PropertyInfo(Variant::Ref<Image>, "result")));
-
-sd_ctx_t* new_sd_ctx(const char* model_path,
-                            const char* clip_l_path,
-                            const char* t5xxl_path,
-                            const char* diffusion_model_path,
-                            const char* vae_path,
-                            const char* taesd_path,
-                            const char* control_net_path_c_str,
-                            const char* lora_model_dir,
-                            const char* embed_dir_c_str,
-                            const char* stacked_id_embed_dir_c_str,
-                            bool vae_decode_only,
-                            bool vae_tiling,
-                            bool free_params_immediately,
-                            int n_threads,
-                            enum sd_type_t wtype,
-                            enum rng_type_t rng_type,
-                            enum schedule_t s,
-                            bool keep_clip_on_cpu,
-                            bool keep_control_net_cpu,
-                            bool keep_vae_on_cpu);
-Error StableDiffusion::load_model(String model_path) {
-    const char* p_model_path = model_path.utf8().get_data();
-    
-    sd_ctx_t* sd_ctx = new_sd_ctx(p_model_path,
-                                  params.clip_l_path.c_str(),
-                                  params.t5xxl_path.c_str(),
-                                  params.diffusion_model_path.c_str(),
-                                  params.vae_path.c_str(),
-                                  params.taesd_path.c_str(),
-                                  params.controlnet_path.c_str(),
-                                  params.lora_model_dir.c_str(),
-                                  params.embeddings_path.c_str(),
-                                  params.stacked_id_embeddings_path.c_str(),
-                                  true,
-                                  params.vae_tiling,
-                                  true,
-                                  params.n_threads,
-                                  params.wtype,
-                                  params.rng_type,
-                                  params.schedule,
-                                  params.clip_on_cpu,
-                                  params.control_net_cpu,
-                                  params.vae_on_cpu);
-	
-	if (sd_ctx == NULL) {
-        ERR_PRINT("new_sd_ctx_t failed\n");
-        return NULL;
-    }
-}
-
-Ref<Image> StableDiffusion::t2i(String model_path, String prompt){
-
-}
-*/
-
 

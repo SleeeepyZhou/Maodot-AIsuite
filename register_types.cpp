@@ -6,7 +6,9 @@
 /* Module headers */
 #include "ai_object.h"
 #include "stablediffusion.h"
+
 #include "modelloader.h"
+#include "sdcond.h"
 #include "ksampler.h"
 #include "latent.h"
 #include "vae_node.h"
@@ -24,6 +26,7 @@ void initialize_ai_suite_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_ABSTRACT_CLASS(AIResource);
 	GDREGISTER_ABSTRACT_CLASS(SDResource);
 	GDREGISTER_CLASS(SDModel);
+	GDREGISTER_CLASS(SDCond);
 	GDREGISTER_CLASS(Latent);
 }
 

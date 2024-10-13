@@ -2,24 +2,18 @@
 #define LATENT_H
 
 #include "stablediffusion.h"
-#include "ggml.h"
-#include "core/io/image.h"
+#include "ggml_extend.hpp"
 
 class Latent : public SDResource {
 	GDCLASS(Latent, SDResource);
 
-public:
-    enum LatentFromImage {
-		BASE_IMAGE,
-        BASE_WH,
-	};
-
 private:
     int width = 512;
 	int height = 512;
-    Ref<Image> input_image;
-    LatentFromImage create_mode = BASE_IMAGE;
-    ggml_tensor* latent;
+    int batch_count = 1;
+
+    ggml_tensor* latent = NULL;
+    struct ggml_context* work_ctx = NULL;
 
 protected:
 	static void _bind_methods();
@@ -31,13 +25,10 @@ public:
 	int get_width() const;
     void set_height(const int &p_height);
 	int get_height() const;
-    void set_image(const Ref<Image> &p_image);
-	Ref<Image> get_image() const;
-    void set_create_mode(LatentFromImage p_mode);
-	LatentFromImage get_create_mode() const;
 
-    void creat_latent();
-    void free_latent();
+    void create_latent(SDVersion version);
+    ggml_tensor* get_latent() const;
+    struct ggml_context* get_work_ctx() const;
 
 };
 
