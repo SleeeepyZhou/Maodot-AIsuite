@@ -6,7 +6,28 @@
 class SDModel : public SDResource {
 	GDCLASS(SDModel, SDResource);
 
-	String model_path
+	String model_path;
+
+	ggml_backend_t backend             = NULL;  // general backend
+    ggml_backend_t clip_backend        = NULL;
+    ggml_type model_wtype              = GGML_TYPE_COUNT;
+    ggml_type conditioner_wtype        = GGML_TYPE_COUNT;
+    ggml_type diffusion_model_wtype    = GGML_TYPE_COUNT;
+
+    SDVersion version;
+    bool free_params_immediately = false;
+
+    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
+    int n_threads            = -1;
+    float scale_factor       = 0.18215f;
+
+    std::shared_ptr<Conditioner> cond_stage_model;
+    std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision;  // for svd
+    std::shared_ptr<DiffusionModel> diffusion_model;
+
+    std::map<std::string, struct ggml_tensor*> tensors;
+
+    std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
 
 public:
     enum SDVersion {
@@ -31,11 +52,23 @@ public:
 	String _get_model_path() const;
 };
 
+class CLIP : public SDResource {
+	
+}
+
 class SDModelLoader : public StableDiffusion {
 	GDCLASS(SDModelLoader, StableDiffusion);
 
 public:
-	typedef schedule_t Scheduler;
+	enum Scheduler {
+		DEFAULT,
+		DISCRETE,
+		KARRAS,
+		EXPONENTIAL,
+		AYS,
+		GITS,
+		N_SCHEDULES
+	};
 
 private:
     sd_ctx_t* SDModel;

@@ -46,8 +46,6 @@ public:
 
 	void load_model(String model_path);
     void free_model();
-	void set_schedule(Scheduler p_schedule);
-	Scheduler get_schedule() const;
 }
 
 #endif // VAE_NODE_H

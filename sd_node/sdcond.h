@@ -3,7 +3,6 @@
 
 #include "stablediffusion.h"
 
-
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
 
