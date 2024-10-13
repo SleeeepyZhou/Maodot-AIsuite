@@ -257,6 +257,24 @@ static std::vector<ggml_vk_device> ggml_vk_available_devices_internal(size_t mem
         results.push_back(d);
     }
 
+    std::unordered_map<int, int> device_type = {
+        {VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, 0},
+        {VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, 1},
+        {VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU, 2},
+        {VK_PHYSICAL_DEVICE_TYPE_CPU, 3},
+        {VK_PHYSICAL_DEVICE_TYPE_OTHER, 4}
+    };
+
+    std::stable_sort(results.begin(), results.end(),
+        [&device_type](const ggml_vk_device& lhs, const ggml_vk_device& rhs) -> bool {
+            if (lhs.type != rhs.type) {
+                return device_type[lhs.type] < device_type[rhs.type];
+            }
+            return lhs.heapSize > rhs.heapSize;
+        }
+    );
+
+    /*
     std::stable_sort(results.begin(), results.end(),
         [](const ggml_vk_device& lhs, const ggml_vk_device& rhs) -> bool {
             if (lhs.type != rhs.type) {
@@ -269,6 +287,7 @@ static std::vector<ggml_vk_device> ggml_vk_available_devices_internal(size_t mem
             return lhs.heapSize < rhs.heapSize;
         }
     );
+    */
 
     return results;
 }
@@ -284,6 +303,7 @@ ggml_vk_device * ggml_vk_available_devices(size_t memoryRequired, size_t * count
     size_t nbytes = sizeof (ggml_vk_device) * (devices.size());
     auto * arr = static_cast<ggml_vk_device *>(malloc(nbytes));
     memcpy(arr, devices.data(), nbytes);
+
     return arr;
 }
 

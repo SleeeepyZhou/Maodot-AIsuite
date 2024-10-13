@@ -6,12 +6,6 @@
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
 
-public:
-    enum LatentFromImage {
-		BASE_IMAGE,
-        BASE_WH,
-	};
-
 private:
     int clip_skip = -1;
 
@@ -40,5 +34,18 @@ public:
     void free_latent();
 
 };
+
+class CLIP : public SDResource {
+	GDCLASS(SDModel, SDResource);
+
+	ggml_backend_t clip_backend = NULL;
+    ggml_type conditioner_wtype = GGML_TYPE_COUNT;
+
+}
+
+class Control : public StableDiffusion {
+	GDCLASS(Control, StableDiffusion);
+
+}
 
 #endif // COND_H

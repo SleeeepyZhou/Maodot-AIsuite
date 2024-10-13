@@ -8,13 +8,12 @@ class SDModel : public SDResource {
 
 	String model_path;
 
-	ggml_backend_t backend             = NULL;  // general backend
-    ggml_backend_t clip_backend        = NULL;
+	SDVersion version;
+
     ggml_type model_wtype              = GGML_TYPE_COUNT;
-    ggml_type conditioner_wtype        = GGML_TYPE_COUNT;
     ggml_type diffusion_model_wtype    = GGML_TYPE_COUNT;
 
-    SDVersion version;
+    
     bool free_params_immediately = false;
 
     std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
@@ -47,14 +46,7 @@ protected:
 public:
     SDModel();
     ~SDModel();
-    void set_model(const String &p_model_path);
-	void _set_model_path(const String &p_model_path);
-	String _get_model_path() const;
 };
-
-class CLIP : public SDResource {
-	
-}
 
 class SDModelLoader : public StableDiffusion {
 	GDCLASS(SDModelLoader, StableDiffusion);
@@ -71,11 +63,17 @@ public:
 	};
 
 private:
-    sd_ctx_t* SDModel;
-	Scheduler schedule = DEFAULT;
+	ggml_backend_t backend ;  // general backend
+
+	String model_path;
 	String lora_path;
 
+	Scheduler schedule = DEFAULT;
+
 	Dictionary model_list;
+	SDModel Model;
+
+	
 
 protected:
 	static void _bind_methods();
@@ -83,6 +81,10 @@ protected:
 public:
 	SDModelLoader();
 	~SDModelLoader();
+
+	void _set_model_path(const String &p_model_path);
+	String _get_model_path() const;
+
 	void set_schedule(Scheduler p_schedule);
 	Scheduler get_schedule() const;
 	
