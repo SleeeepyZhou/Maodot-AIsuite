@@ -2,10 +2,13 @@
 #include "deviceinfo.h"
 
 /* GGML */
+#include "ggml_extend.hpp"
 
 /* StableDiffusion */
-#include "ggml_extend.hpp"
 #include "model.h"
+#include "conditioner.hpp"
+#include "diffusion_model.hpp"
+#include "denoiser.hpp"
 
 /* Module header */
 #include "stablediffusion.h"
@@ -208,6 +211,12 @@ void SDModel::_bind_methods() {
     BIND_ENUM_CONSTANT(VERSION_COUNT);
 }
 
+// VAE
+VAEModel::VAEModel() {
+}
+VAEModel::~VAEModel() {
+}
+
 // SDModelLoader
 SDModelLoader::SDModelLoader() {
 }
@@ -219,9 +228,7 @@ Backend SDModelLoader::create_backend(int device_index, bool use_cpu = false) {
 	return new_backend;
 }
 
-Array SDModelLoader::load_model(String model_path, Scheduler schedule = DEFAULT) {
 
-}
 
 void SDModelLoader::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_backend","device_index","use_cpu"), &SDModelLoader::create_backend);
@@ -259,13 +266,6 @@ Control
 SDCond::SDCond() {
 
 }
-
-
-// CLIP
-CLIP::CLIP() {
-
-}
-
 
 // Control
 Control::Control() {
@@ -422,12 +422,6 @@ VAE
     out image   /   latent
 
 */
-
-// VAEModel
-VAEModel::VAEModel() {
-}
-VAEModel::~VAEModel() {
-}
 
 // VAE
 VAE::VAE() {

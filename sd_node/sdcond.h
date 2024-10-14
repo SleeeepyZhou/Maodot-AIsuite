@@ -35,17 +35,11 @@ public:
 
 };
 
-class CLIP : public SDResource {
-	GDCLASS(SDModel, SDResource);
-
-	ggml_backend_t clip_backend = NULL;
-    ggml_type conditioner_wtype = GGML_TYPE_COUNT;
-
-}
-
 class Control : public StableDiffusion {
 	GDCLASS(Control, StableDiffusion);
 
+
+    SDCond text_encoders();
 }
 
 #endif // COND_H

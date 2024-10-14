@@ -7,7 +7,7 @@ class LoraLoader : public StableDiffusion {
 	GDCLASS(LoraLoader, StableDiffusion);
 
 private:
-	String lora_path;
+	String lora_model_dir;
 
 
 }
