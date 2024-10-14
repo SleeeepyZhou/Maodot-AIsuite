@@ -1,9 +1,11 @@
+/* System */
+#include "deviceinfo.h"
+
 /* GGML */
-#include "ggml-kompute.h"
 
 /* StableDiffusion */
 #include "ggml_extend.hpp"
-#include "util.h"
+#include "model.h"
 
 /* Module header */
 #include "stablediffusion.h"
@@ -13,35 +15,6 @@
 #include "vae_node.h"
 #include "ksampler.h"
 #include "latent.h"
-
-
-// System
-static int physical_Core = get_num_physical_cores();
-
-Array get_vk_available_devices() {
-    size_t device_count = 0;
-    ggml_vk_device *devices = ggml_vk_available_devices(1024 * 1024 * 1024, &device_count); 
-    Array vk_devices;
-    if (devices != nullptr) {
-        for (size_t i = 0; i < device_count; ++i) {
-            Dictionary vk_device;
-            vk_device["index"] = devices[i].index;
-            vk_device["type"] = devices[i].type;
-            vk_device["heapSize"] = devices[i].heapSize;
-            vk_device["vendor"] = String(devices[i].vendor);
-            vk_device["subgroupSize"] = devices[i].subgroupSize;
-            vk_device["bufferAlignment"] = devices[i].bufferAlignment;
-            vk_device["maxAlloc"] = devices[i].maxAlloc;
-            vk_device["name"] = String(devices[i].name);
-            vk_devices.push_back(vk_device);
-        }
-        free(devices);
-    } else {
-        ERR_PRINT(vformat("No Vulkan devices available or insufficient memory."));
-    }
-    return vk_devices;
-}
-static Array vk_available_devices = get_vk_available_devices()
 
 
 //// Base class : stablediffusion
@@ -79,18 +52,14 @@ void StableDiffusion::set_n_threads(bool p_threads) {
     n_threads = p_threads;
 }
 int StableDiffusion::get_n_threads() const {
-    if (n_threads < 0) {
-        return physical_Core;
-    }
 	return n_threads;
 }
 
-int StableDiffusion::get_sys_physical_cores() const {
-	return physical_Core;
-}
-
 Array StableDiffusion::get_vk_devices() const {
-	return vk_available_devices;
+	return DeviceInfo::getInstance().get_available_devices();
+}
+int StableDiffusion::get_sys_physical_cores() const {
+	return DeviceInfo::getInstance().get_core_count();
 }
 
 void StableDiffusion::_bind_methods() {
@@ -100,11 +69,11 @@ void StableDiffusion::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_n_threads", "threads"), &StableDiffusion::set_n_threads);
     ClassDB::bind_method(D_METHOD("get_n_threads"), &StableDiffusion::get_n_threads);
 
-    ClassDB::bind_method(D_METHOD("get_sys_physical_cores"), &StableDiffusion::get_sys_physical_cores);
     ClassDB::bind_method(D_METHOD("get_vk_devices"), &StableDiffusion::get_vk_devices);
+    ClassDB::bind_method(D_METHOD("get_sys_physical_cores"), &StableDiffusion::get_sys_physical_cores);
 
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_log"), "set_print_log", "is_print_log");
-    ADD_PROPERTY(PropertyInfo(Variant::INT, "n_threads", PROPERTY_HINT_RANGE, "-1,512,1"), "set_n_threads", "get_n_threads");
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "n_threads", PROPERTY_HINT_RANGE, "-1,512"), "set_n_threads", "get_n_threads");
 
     ADD_SIGNAL(MethodInfo("sd_log", PropertyInfo(Variant::STRING, "SD_log")));
 }
@@ -128,72 +97,144 @@ SDModelLoader
 
 */
 
+// Backend
+Backend::Backend() {
+}
+Backend::Backend(int _index, bool _cpu = false) {
+    usecpu(_cpu);
+    set_device(_index);
+}
+Backend::~Backend() {
+    if (backend) {
+        ggml_backend_free(backend);
+    }
+}
+
+Array Backend::get_vk_devices_idx() const {
+    return DeviceInfo::getInstance().get_devices_idx();
+}
+void Backend::set_device(int device_index) {
+    if (backend) {
+        ggml_backend_free(backend);
+    }
+    if (!use_cpu) {
+/*
+#ifdef SD_USE_CUBLAS
+    printlog(vformat("Using CUDA backend"));
+    backend = ggml_backend_cuda_init(0);
+#endif
+#ifdef SD_USE_METAL
+    printlog(vformat("Using Metal backend"));
+    ggml_backend_metal_log_set_callback(ggml_log_callback_default, nullptr);
+    backend = ggml_backend_metal_init();
+#endif
+#ifdef SD_USE_SYCL
+    printlog(vformat("Using SYCL backend"));
+    backend = ggml_backend_sycl_init(0);
+#endif
+#ifdef SD_USE_VULKAN
+*/
+    printlog(vformat("Using Vulkan"));
+    Array vk_devices_idx = get_vk_devices();
+    if (!vk_devices_idx.is_empty()) {
+        size_t set_device = vk_devices_idx[0];
+        if (device_index >= 0 && vk_devices_idx.has(device_index)) {
+            set_device = device_index;
+        } 
+        backend = ggml_backend_vk_init(set_device);
+        printlog(vformat("Using Vulkan device : %d", set_device));
+    }
+    if (!backend) {
+        WARN_PRINT(vformat("Failed to initialize Vulkan backend"));
+    }
+/*
+#endif
+*/
+    }
+    if (!backend || use_cpu) {
+        WARN_PRINT(vformat("Using CPU backend"));
+        backend = ggml_backend_cpu_init();
+    }
+}
+
+void Backend::usecpu(bool p_use) {
+    use_cpu = p_use;
+}
+bool Backend::is_use_cpu() const {
+	return use_cpu;
+}
+
+void Backend::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_device", "device_index"), &Backend::set_device);
+    ClassDB::bind_method(D_METHOD("usecpu","enable"), &Backend::usecpu);
+    ClassDB::bind_method(D_METHOD("is_use_cpu"), &Backend::is_use_cpu);
+
+    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_cpu"),"usecpu","is_use_cpu");
+
+}
+
 // SDModel
 SDModel::SDModel() {
 }
 SDModel::~SDModel() {
 }
 
-void SDModel::_bind_methods() {
+String SDModel::get_model_path() const {
+	return model_path;
+}
+SDVersion SDModel::get_version() const {
+	return version;
 }
 
-// SDModelLoader
-SDModelLoader::SDModelLoader() {
-#ifdef SD_USE_CUBLAS
-        printlog(vformat("Using CUDA backend"));
-        backend = ggml_backend_cuda_init(0);
-#endif
-#ifdef SD_USE_METAL
-        printlog(vformat("Using Metal backend"));
-        ggml_backend_metal_log_set_callback(ggml_log_callback_default, nullptr);
-        backend = ggml_backend_metal_init();
-#endif
-#ifdef SD_USE_VULKAN
-    printlog(vformat("Using Vulkan backend"));
-    size_t frist_device = vk_available_devices.front().get("index", 0)
-    backend = ggml_backend_vk_init(frist_device);
-    if(!backend) {
-        WARN_PRINT(vformat("Failed to initialize Vulkan backend"));
-    }
-#endif
-#ifdef SD_USE_SYCL
-        printlog(vformat("Using SYCL backend"));
-        backend = ggml_backend_sycl_init(0);
-#endif
-    if (!backend) {
-        WARN_PRINT(vformat("Using CPU backend"));
-        backend = ggml_backend_cpu_init();
-    }
-}
-SDModelLoader::~SDModelLoader() {
-    free_sd_ctx(SDModel);
-}
-
-void SDModelLoader::set_schedule(Scheduler p_schedule) {
-	schedule = p_schedule;
-}
-SDModelLoader::Scheduler SDModelLoader::get_schedule() const {
-	return schedule;
-}
-
-void SDModelLoader::load_model(String model_path) {
-    
-}
-void SDModelLoader::free_model() {
+void SDModel::free_model() {
     free_sd_ctx(SDModel);
     printlog("Model freed");
 }
 
-void SDModelLoader::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("free_model"), &SDModelLoader::free_model);
-    ClassDB::bind_method(D_METHOD("load_model", "model_path"), &SDModelLoader::load_model);
-    ClassDB::bind_method(D_METHOD("set_schedule", "scheduler"), &SDModelLoader::set_schedule);
-    ClassDB::bind_method(D_METHOD("get_schedule"), &SDModelLoader::get_schedule);
-    
-    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "_set_model_path", "_get_model_path");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "schedule", PROPERTY_HINT_ENUM, "DEFAULT,DISCRETE,KARRAS,EXPONENTIAL,AYS,GITS,N_SCHEDULES"), "set_schedule", "get_schedule");
+void SDModel::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
+    ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
+
+    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "SDVersion", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell, VERSION_COUNT", PROPERTY_USAGE_READ_ONLY),"","get_version");
+
+    BIND_ENUM_CONSTANT(VERSION_SD1);
+    BIND_ENUM_CONSTANT(VERSION_SD2);
+	BIND_ENUM_CONSTANT(VERSION_SDXL);
+    BIND_ENUM_CONSTANT(VERSION_SVD);
+    BIND_ENUM_CONSTANT(VERSION_SD3_2B);
+    BIND_ENUM_CONSTANT(VERSION_FLUX_DEV);
+    BIND_ENUM_CONSTANT(VERSION_FLUX_SCHNELL);
+    BIND_ENUM_CONSTANT(VERSION_COUNT);
 }
 
+// SDModelLoader
+SDModelLoader::SDModelLoader() {
+}
+SDModelLoader::~SDModelLoader() {
+}
+
+Backend SDModelLoader::create_backend(int device_index, bool use_cpu = false) {
+    Backend new_backend = new Backend(device_index, use_cpu);
+	return new_backend;
+}
+
+Array SDModelLoader::load_model(String model_path, Scheduler schedule = DEFAULT) {
+
+}
+
+void SDModelLoader::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("create_backend","device_index","use_cpu"), &SDModelLoader::create_backend);
+	ClassDB::bind_method(D_METHOD("load_model","model_path","schedule"), &SDModelLoader::load_model);
+
+    BIND_ENUM_CONSTANT(DEFAULT);
+    BIND_ENUM_CONSTANT(DISCRETE);
+	BIND_ENUM_CONSTANT(KARRAS);
+    BIND_ENUM_CONSTANT(EXPONENTIAL);
+    BIND_ENUM_CONSTANT(AYS);
+    BIND_ENUM_CONSTANT(GITS);
+    BIND_ENUM_CONSTANT(N_SCHEDULES);
+}
 
 //// sdcond
 

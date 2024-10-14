@@ -35,8 +35,8 @@ public:
 	void set_n_threads(bool p_threads);
 	int get_n_threads() const;
 
-	int get_sys_physical_cores() const;
 	Array get_vk_devices() const;
+	int get_sys_physical_cores() const;
 };
 
 #endif // STABLE_DIFFUSION_H

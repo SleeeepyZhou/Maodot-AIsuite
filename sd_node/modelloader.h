@@ -2,16 +2,52 @@
 #define MODEL_LOADER_H
 
 #include "stablediffusion.h"
+#include "ggml_extend.hpp"
+
+class Backend : public SDResource {
+	GDCLASS(Backend, SDResource);
+
+private:
+	bool use_cpu = false;
+	ggml_backend_t backend = NULL;  // general backend
+
+protected:
+	static void _bind_methods();
+
+public:
+	Backend();
+	Backend(int _index, bool _cpu = false);
+	~Backend();
+
+	Array get_vk_devices_idx() const;
+	void set_device(int device_index);
+
+	void usecpu(bool p_use);
+	bool is_use_cpu() const;
+}
 
 class SDModel : public SDResource {
 	GDCLASS(SDModel, SDResource);
 
-	String model_path;
+public:
+    enum SDVersion {
+        VERSION_SD1,
+        VERSION_SD2,
+        VERSION_SDXL,
+        VERSION_SVD,
+        VERSION_SD3_2B,
+        VERSION_FLUX_DEV,
+        VERSION_FLUX_SCHNELL,
+        VERSION_COUNT,
+    };
 
-	SDVersion version;
-
+private:
     ggml_type model_wtype              = GGML_TYPE_COUNT;
     ggml_type diffusion_model_wtype    = GGML_TYPE_COUNT;
+
+	String model_path;
+	SDVersion version = VERSION_COUNT;
+
 
     
     bool free_params_immediately = false;
@@ -28,24 +64,14 @@ class SDModel : public SDResource {
 
     std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
 
-public:
-    enum SDVersion {
-        VERSION_SD1,
-        VERSION_SD2,
-        VERSION_SDXL,
-        VERSION_SVD,
-        VERSION_SD3_2B,
-        VERSION_FLUX_DEV,
-        VERSION_FLUX_SCHNELL,
-        VERSION_COUNT,
-    };
-
 protected:
 	static void _bind_methods();
 
 public:
     SDModel();
     ~SDModel();
+	String get_model_path() const;
+	SDVersion get_version() const;
 };
 
 class SDModelLoader : public StableDiffusion {
@@ -62,35 +88,15 @@ public:
 		N_SCHEDULES
 	};
 
-private:
-	ggml_backend_t backend ;  // general backend
-
-	String model_path;
-	String lora_path;
-
-	Scheduler schedule = DEFAULT;
-
-	Dictionary model_list;
-	SDModel Model;
-
-	
-
 protected:
 	static void _bind_methods();
 
 public:
 	SDModelLoader();
 	~SDModelLoader();
-
-	void _set_model_path(const String &p_model_path);
-	String _get_model_path() const;
-
-	void set_schedule(Scheduler p_schedule);
-	Scheduler get_schedule() const;
 	
-	void load_model(String model_path);
-    void free_model();
-
+	Backend create_backend(int device_index, bool use_cpu = false);
+	Array load_model(String model_path, Scheduler schedule = DEFAULT);
 };
 
 #endif // MODEL_LOADER_H
