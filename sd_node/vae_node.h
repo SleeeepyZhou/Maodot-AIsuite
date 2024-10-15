@@ -1,3 +1,5 @@
+/*       By SleeeepyZhou        */
+
 #ifndef VAE_NODE_H
 #define VAE_NODE_H
 

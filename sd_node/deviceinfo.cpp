@@ -1,3 +1,5 @@
+/*       By SleeeepyZhou        */
+
 #include "deviceinfo.h"
 
 #include "ggml-kompute.h"

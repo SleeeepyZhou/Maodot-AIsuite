@@ -1,3 +1,5 @@
+/*       By SleeeepyZhou        */
+
 #ifndef DEVICE_INFO_H
 #define DEVICE_INFO_H
 

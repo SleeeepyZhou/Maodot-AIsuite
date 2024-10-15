@@ -1,3 +1,5 @@
+/*       By SleeeepyZhou        */
+
 #ifndef K_SAMPLER_H
 #define K_SAMPLER_H
 

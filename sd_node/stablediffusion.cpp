@@ -1,3 +1,6 @@
+/*  StableDiffusion for Modot   */
+/*       By SleeeepyZhou        */
+
 /* System */
 #include "deviceinfo.h"
 
@@ -5,10 +8,6 @@
 #include "ggml_extend.hpp"
 
 /* StableDiffusion */
-#include "model.h"
-#include "conditioner.hpp"
-#include "diffusion_model.hpp"
-#include "denoiser.hpp"
 
 /* Module header */
 #include "stablediffusion.h"
@@ -82,174 +81,12 @@ void StableDiffusion::_bind_methods() {
 }
 
 
-//// modelloader
-
-/*
-
-Res
-SDModel
-
-Node
-SDModelLoader
-    in  lora
-        model_path
-    
-    out SDModel
-        VAE
-        CLIP
-
-*/
-
-// Backend
-Backend::Backend() {
-}
-Backend::Backend(int _index, bool _cpu = false) {
-    usecpu(_cpu);
-    set_device(_index);
-}
-Backend::~Backend() {
-    if (backend) {
-        ggml_backend_free(backend);
-    }
-}
-
-Array Backend::get_vk_devices_idx() const {
-    return DeviceInfo::getInstance().get_devices_idx();
-}
-void Backend::set_device(int device_index) {
-    if (backend) {
-        ggml_backend_free(backend);
-    }
-    if (!use_cpu) {
-/*
-#ifdef SD_USE_CUBLAS
-    printlog(vformat("Using CUDA backend"));
-    backend = ggml_backend_cuda_init(0);
-#endif
-#ifdef SD_USE_METAL
-    printlog(vformat("Using Metal backend"));
-    ggml_backend_metal_log_set_callback(ggml_log_callback_default, nullptr);
-    backend = ggml_backend_metal_init();
-#endif
-#ifdef SD_USE_SYCL
-    printlog(vformat("Using SYCL backend"));
-    backend = ggml_backend_sycl_init(0);
-#endif
-#ifdef SD_USE_VULKAN
-*/
-    printlog(vformat("Using Vulkan"));
-    Array vk_devices_idx = get_vk_devices();
-    if (!vk_devices_idx.is_empty()) {
-        size_t set_device = vk_devices_idx[0];
-        if (device_index >= 0 && vk_devices_idx.has(device_index)) {
-            set_device = device_index;
-        } 
-        backend = ggml_backend_vk_init(set_device);
-        printlog(vformat("Using Vulkan device : %d", set_device));
-    }
-    if (!backend) {
-        WARN_PRINT(vformat("Failed to initialize Vulkan backend"));
-    }
-/*
-#endif
-*/
-    }
-    if (!backend || use_cpu) {
-        WARN_PRINT(vformat("Using CPU backend"));
-        backend = ggml_backend_cpu_init();
-    }
-}
-
-void Backend::usecpu(bool p_use) {
-    use_cpu = p_use;
-}
-bool Backend::is_use_cpu() const {
-	return use_cpu;
-}
-
-void Backend::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_device", "device_index"), &Backend::set_device);
-    ClassDB::bind_method(D_METHOD("usecpu","enable"), &Backend::usecpu);
-    ClassDB::bind_method(D_METHOD("is_use_cpu"), &Backend::is_use_cpu);
-
-    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_cpu"),"usecpu","is_use_cpu");
-
-}
-
-// SDModel
-SDModel::SDModel() {
-}
-SDModel::~SDModel() {
-}
-
-String SDModel::get_model_path() const {
-	return model_path;
-}
-SDVersion SDModel::get_version() const {
-	return version;
-}
-
-void SDModel::free_model() {
-    free_sd_ctx(SDModel);
-    printlog("Model freed");
-}
-
-void SDModel::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
-    ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
-
-    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "SDVersion", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell, VERSION_COUNT", PROPERTY_USAGE_READ_ONLY),"","get_version");
-
-    BIND_ENUM_CONSTANT(VERSION_SD1);
-    BIND_ENUM_CONSTANT(VERSION_SD2);
-	BIND_ENUM_CONSTANT(VERSION_SDXL);
-    BIND_ENUM_CONSTANT(VERSION_SVD);
-    BIND_ENUM_CONSTANT(VERSION_SD3_2B);
-    BIND_ENUM_CONSTANT(VERSION_FLUX_DEV);
-    BIND_ENUM_CONSTANT(VERSION_FLUX_SCHNELL);
-    BIND_ENUM_CONSTANT(VERSION_COUNT);
-}
-
-// VAE
-VAEModel::VAEModel() {
-}
-VAEModel::~VAEModel() {
-}
-
-// SDModelLoader
-SDModelLoader::SDModelLoader() {
-}
-SDModelLoader::~SDModelLoader() {
-}
-
-Backend SDModelLoader::create_backend(int device_index, bool use_cpu = false) {
-    Backend new_backend = new Backend(device_index, use_cpu);
-	return new_backend;
-}
-
-
-
-void SDModelLoader::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("create_backend","device_index","use_cpu"), &SDModelLoader::create_backend);
-	ClassDB::bind_method(D_METHOD("load_model","model_path","schedule"), &SDModelLoader::load_model);
-
-    BIND_ENUM_CONSTANT(DEFAULT);
-    BIND_ENUM_CONSTANT(DISCRETE);
-	BIND_ENUM_CONSTANT(KARRAS);
-    BIND_ENUM_CONSTANT(EXPONENTIAL);
-    BIND_ENUM_CONSTANT(AYS);
-    BIND_ENUM_CONSTANT(GITS);
-    BIND_ENUM_CONSTANT(N_SCHEDULES);
-}
-
 //// sdcond
 
 /*
 
 Res
 SDcond
-clipmodel
 
 Node
 Control
@@ -409,6 +246,7 @@ void Latent::free_latent() {
 void Latent::_bind_methods() {
 
 }
+
 
 //// vae
 

@@ -1,3 +1,5 @@
+/*       By SleeeepyZhou        */
+
 #ifndef STABLE_DIFFUSION_H
 #define STABLE_DIFFUSION_H
 
