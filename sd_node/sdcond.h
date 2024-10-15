@@ -4,6 +4,7 @@
 #define COND_H
 
 #include "stablediffusion.h"
+#include "modelloader.h"
 
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
@@ -19,8 +20,8 @@ public:
     ~SDCond();
 };
 
-class Control : public StableDiffusion {
-	GDCLASS(Control, StableDiffusion);
+class SDControl : public StableDiffusion {
+	GDCLASS(SDControl, StableDiffusion);
 
 private:
     CLIP clip_res;
@@ -29,8 +30,8 @@ protected:
     static void _bind_methods();
 
 public:
-    Control();
-    ~Control();
+    SDControl();
+    ~SDControl();
     SDCond text_encoders(CLIP clip_res, String prompt);
 }
 

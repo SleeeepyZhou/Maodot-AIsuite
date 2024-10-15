@@ -7,6 +7,9 @@
 
 #include "ggml_extend.hpp"
 
+#include "rng.hpp"
+#include "rng_philox.hpp"
+
 /* Latent */
 class Latent : public SDResource {
 	GDCLASS(Latent, SDResource);
@@ -33,16 +36,16 @@ public:
 	int get_height() const;
 
     void create_latent(SDVersion version);
+    
+    /*
     ggml_tensor* get_latent() const;
     struct ggml_context* get_work_ctx() const;
-
+    */
 };
 
 /* KSampler */
 class KSampler : public StableDiffusion {
 	GDCLASS(KSampler, StableDiffusion);
-    
-    NodePath modelloader;
     
 public:
     enum SamplerName {
@@ -67,7 +70,6 @@ private:
     float denoise = 1.0f;
     SamplerName sampler_name = LCM;
     
-
 protected:
 	static void _bind_methods();
 
@@ -75,7 +77,7 @@ public:
 	KSampler();
 	~KSampler();
     void sample(Latent init_latent);
-    
+
 };
 
 #endif // K_SAMPLER_H

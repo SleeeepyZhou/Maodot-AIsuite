@@ -99,14 +99,29 @@ Control
 
 */
 
+
+
 // SDCond
 SDCond::SDCond() {
 }
 SDCond::~SDCond() {
 }
 
-// Control
-Control::Control() {
+void SDCond::_bind_methods() {
+}
+
+
+// SDControl
+SDControl::SDControl() {
+}
+SDControl::~SDControl() {
+}
+
+SDCond SDControl::text_encoders(CLIP clip_res, String prompt) {
+	return SDCond();
+}
+
+void SDControl::_bind_methods() {
 }
 
 
@@ -233,6 +248,7 @@ void Latent::create_latent(SDVersion version) {
     }
 }
 
+/*
 ggml_tensor *Latent::get_latent() const {
 	return latent;
 }
@@ -242,7 +258,7 @@ ggml_context *Latent::get_work_ctx() const {
 
 void Latent::free_latent() {
 }
-
+*/
 void Latent::_bind_methods() {
 
 }

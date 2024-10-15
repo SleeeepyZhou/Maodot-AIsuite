@@ -21,7 +21,7 @@ void initialize_ai_suite_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_ABSTRACT_CLASS(StableDiffusion);
 	
 	GDREGISTER_CLASS(SDModelLoader);
-	GDREGISTER_CLASS(Control);
+	GDREGISTER_CLASS(SDControl);
 	GDREGISTER_CLASS(KSampler);
 	GDREGISTER_CLASS(VAE);
 
