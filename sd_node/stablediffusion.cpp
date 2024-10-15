@@ -101,12 +101,12 @@ Control
 
 // SDCond
 SDCond::SDCond() {
-
+}
+SDCond::~SDCond() {
 }
 
 // Control
 Control::Control() {
-
 }
 
 
