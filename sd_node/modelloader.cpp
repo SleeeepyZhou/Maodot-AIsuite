@@ -7,6 +7,7 @@
 #include "conditioner.hpp"
 #include "diffusion_model.hpp"
 #include "denoiser.hpp"
+#include "esrgan.hpp"
 #include "vae.hpp"
 #include "tae.hpp"
 
@@ -120,114 +121,34 @@ void SDModel::set_model_path(String p_path) {
 String SDModel::get_model_path() const {
 	return model_path;
 }
-
-void SDModel::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
-
-    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
+void SDModel::set_backend(Backend p_backen) {
+    backend_res = p_backen;
 }
-
-// CLIP
-CLIP::CLIP(){
+Backend SDModel::get_backend() const {
+	return backend_res;
 }
-CLIP::CLIP(
-        String model_path, 
-        ) :
-        {
-    set_model_path(model_path);
+void SDModel::set_version(SDVersion p_version) {
+    version = p_version;
 }
-CLIP::~CLIP(){
-}
-
-// Diffusion
-Diffusion::Diffusion() {
-}
-Diffusion::Diffusion(
-                String model_path, 
-                bool is_using_v_parameterization,
-                Backend backend_res, 
-                SDVersion version,
-                Scheduler schedule) :
-                backend_res(backend_res),
-                version(version),
-                schedule(schedule) {
-    set_model_path(model_path);
-
-    /* scale_factor */
-    scale_factor     = 0.18215f;
-    if (version == VERSION_SDXL) {
-        scale_factor = 0.13025f;
-    } else if (version == VERSION_SD3_2B) {
-        scale_factor = 1.5305f;
-    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-        scale_factor = 0.3611;
-    } 
-
-    /* denoiser */
-    denoiser = std::make_shared<CompVisDenoiser>();
-    if (version == VERSION_SD3_2B) {
-        printlog(vformat("running in FLOW mode"));
-        denoiser = std::make_shared<DiscreteFlowDenoiser>();
-    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-        printlog(vformat("running in Flux FLOW mode"));
-        float shift = 1.15f;
-        if (version == VERSION_FLUX_SCHNELL) {
-            shift = 1.0f;  // TODO: validate
-        }
-        denoiser = std::make_shared<FluxFlowDenoiser>(shift);
-    } else if (version == VERSION_SVD || is_using_v_parameterization) {
-        printlog(vformat("running in v-prediction mode"));
-        denoiser = std::make_shared<CompVisVDenoiser>();
-    } else {
-        printlog(vformat("running in eps-prediction mode"));
-    }
-
-    /* scheduler */
-    if (schedule != DEFAULT) {
-        switch (schedule) {
-            case DISCRETE:
-                printlog(vformat("running with discrete schedule"));
-                denoiser->schedule = std::make_shared<DiscreteSchedule>();
-                break;
-            case KARRAS:
-                printlog(vformat("running with Karras schedule"));
-                denoiser->schedule = std::make_shared<KarrasSchedule>();
-                break;
-            case EXPONENTIAL:
-                printlog(vformat("running exponential schedule"));
-                denoiser->schedule = std::make_shared<ExponentialSchedule>();
-                break;
-            case AYS:
-                printlog(vformat("Running with Align-Your-Steps schedule"));
-                denoiser->schedule          = std::make_shared<AYSSchedule>();
-                denoiser->schedule->version = version;
-                break;
-            case GITS:
-                printlog(vformat("Running with GITS schedule"));
-                denoiser->schedule          = std::make_shared<GITSSchedule>();
-                denoiser->schedule->version = version;
-                break;
-            case DEFAULT:
-                break;
-            default:
-                printlog(vformat("Unknown schedule %i", schedule));
-                abort();
-        }
-    }
-
-}
-Diffusion::~Diffusion() {
-}
-
-SDVersion Diffusion::get_version() const {
+SDVersion SDModel::get_version() const {
 	return version;
 }
+void SDModel::set_wtype(ggml_type p_wtype){
+	wtype = p_wtype
+}
+ggml_type SDModel::get_wtype() const {
+	return wtype;
+}
 
-void Diffusion::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("get_version"), &Diffusion::get_version);
+void SDModel::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
+    ClassDB::bind_method(D_METHOD("get_backend"), &SDModel::get_backend);
+    ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
 
+    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
+    ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "backend_res", PROPERTY_HINT_RESOURCE_TYPE, "Backend"), "", "get_backend");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "SDVersion", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell, VERSION_COUNT", PROPERTY_USAGE_READ_ONLY),"","get_version");
-
+    
     BIND_ENUM_CONSTANT(VERSION_SD1);
     BIND_ENUM_CONSTANT(VERSION_SD2);
 	BIND_ENUM_CONSTANT(VERSION_SDXL);
@@ -238,12 +159,31 @@ void Diffusion::_bind_methods() {
     BIND_ENUM_CONSTANT(VERSION_COUNT);
 }
 
+// CLIP
+CLIP::CLIP(){
+}
+CLIP::~CLIP(){
+}
+
+void CLIP::_bind_methods() {
+}
+
+// Diffusion
+Diffusion::Diffusion() {
+}
+Diffusion::~Diffusion() {
+}
+
+void Diffusion::_bind_methods() {
+}
+
 // VAE
 VAEModel::VAEModel() {
 }
-VAEModel::VAEModel() {
-}
 VAEModel::~VAEModel() {
+}
+
+void VAEModel::_bind_methods() {
 }
 
 // SDModelLoader
@@ -257,17 +197,9 @@ Backend SDModelLoader::create_backend(int device_index, bool use_cpu = false) {
 	return new_backend;
 }
 
-Array SDModelLoader::load_model(String model_path, Backend backend, Scheduler schedule = DEFAULT, 
-                                bool vae_only_decode = false, ggml_type wtype = GGML_TYPE_COUNT) {
-    
-
-	return;
-}
-
-
 void SDModelLoader::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_backend","device_index","use_cpu"), &SDModelLoader::create_backend);
-	ClassDB::bind_method(D_METHOD("load_model","model_path","schedule"), &SDModelLoader::load_model);
+	ClassDB::bind_method(D_METHOD("load_model","backend","model_path","scheduler","vae_only_decode","vae_on_cpu","clip_on_cpu"), &SDModelLoader::load_model);
 
     BIND_ENUM_CONSTANT(DEFAULT);
     BIND_ENUM_CONSTANT(DISCRETE);
@@ -326,81 +258,117 @@ void SDModelLoader::calculate_alphas_cumprod(float* alphas_cumprod,
     }
 }
 
-/*
-const std::string control_net_path,
-const std::string embeddings_path,
-const std::string id_embeddings_path,
-bool vae_tiling_,
-bool clip_on_cpu,
-bool control_net_cpu,
-bool vae_on_cpu
-*/
+/* Model load */
+CLIP::CLIP(String model_path,
+           Backend backend_res,
+           SDVersion version,
+           ggml_type wtype,
+           std::shared_ptr<Conditioner> cond_stage_model,
+           std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision):
+           cond_stage_model(cond_stage_model),
+           clip_vision(clip_vision) {
+    set_model_path(model_path);
+    set_backend(backend_res);
+    set_version(version);
+    set_wtype(wtype);
+}
 
-Array SDModelLoader::load_from_file(Backend res_backend,
-                                    String str_model_path,
+Diffusion::Diffusion(String model_path,
+                     Backend backend_res,
+                     SDVersion version,
+                     ggml_type wtype,
+                     ggml_type diffusion_wtype,
+                     std::shared_ptr<DiffusionModel> diffusion_model,
+                     std::shared_ptr<Denoiser> denoiser,
+                     Scheduler schedule) :
+                     diffusion_wtype(diffusion_wtype),
+                     diffusion_model(diffusion_model),
+                     denoiser(denoiser),
+                     schedule(schedule) {
+    set_model_path(model_path);
+    set_backend(backend_res);
+    set_version(version);
+    set_wtype(wtype);
 
-                                    String str_clip_l_path,
-                                    String str_t5xxl_path,
-                                    
-                                    String str_diffusion_model_path,
+    /* scale_factor */
+    scale_factor     = 0.18215f;
+    if (version == VERSION_SDXL) {
+        scale_factor = 0.13025f;
+    } else if (version == VERSION_SD3_2B) {
+        scale_factor = 1.5305f;
+    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+        scale_factor = 0.3611;
+    } 
 
-                                    String str_vae_path,
-                                    String str_taesd_path,
+    /* scheduler */
+    if (schedule != DEFAULT) {
+        switch (schedule) {
+            case DISCRETE:
+                printlog(vformat("running with discrete schedule"));
+                denoiser->schedule = std::make_shared<DiscreteSchedule>();
+                break;
+            case KARRAS:
+                printlog(vformat("running with Karras schedule"));
+                denoiser->schedule = std::make_shared<KarrasSchedule>();
+                break;
+            case EXPONENTIAL:
+                printlog(vformat("running exponential schedule"));
+                denoiser->schedule = std::make_shared<ExponentialSchedule>();
+                break;
+            case AYS:
+                printlog(vformat("Running with Align-Your-Steps schedule"));
+                denoiser->schedule          = std::make_shared<AYSSchedule>();
+                denoiser->schedule->version = version;
+                break;
+            case GITS:
+                printlog(vformat("Running with GITS schedule"));
+                denoiser->schedule          = std::make_shared<GITSSchedule>();
+                denoiser->schedule->version = version;
+                break;
+            case DEFAULT:
+                break;
+            default:
+                printlog(vformat("Unknown schedule %i", schedule));
+                abort();
+        }
+    }
+}
 
-                                    ggml_type wtype,
-                                    schedule_t schedule,
 
-                                    bool clip_on_cpu,
-                                    bool vae_on_cpu,
-                                    bool vae_only_decode) {
-    /* Function */
-    bool loadmodel = !str_model_path.is_empty();
-    bool loadclip = !str_clip_l_path.is_empty();
-    bool loaddiffusion = !str_diffusion_model_path.is_empty();
-    bool loadvae = !str_vae_path.is_empty();
-    bool loadtinyae = !str_taesd_path.is_empty();
+VAEModel::VAEModel(String model_path,
+                   Backend backend_res,
+                   SDVersion version,
+                   ggml_type wtype,
+                   std::shared_ptr<AutoEncoderKL> first_stage_model,
+                   std::shared_ptr<TinyAutoEncoder> tae_first_stage,
+                   bool decode_only = false) :
+                   first_stage_model(first_stage_model),
+                   tae_first_stage(tae_first_stage),
+                   decode_only(decode_only) {
+    set_model_path(model_path);
+    set_backend(backend_res);
+    set_version(version);
+    set_wtype(wtype);
+}
 
+Array SDModelLoader::load_model(Backend res_backend,
+                                String str_model_path,
+                                Scheduler schedule, 
+					            
+                                bool vae_only_decode,
+                                bool vae_on_cpu,
+                                bool clip_on_cpu) {
     /* gdscript -> C */
+    ggml_type wtype = GGML_TYPE_COUNT;
     ggml_backend_t backend = res_backend.get_backend();
-    ggml_backend_t clip_backend = NULL;
     const std::string model_path(str_model_path.c_str());
-    const std::string clip_l_path(str_clip_l_path.c_str());
-    const std::string t5xxl_path(str_t5xxl_path.c_str());
-    const std::string diffusion_model_path(str_diffusion_model_path.c_str());
-    const std::string vae_path(str_vae_path.c_str());
 
     /* Loader in file */
     ModelLoader model_loader;
-    if (loadmodel) {
-        printlog(vformat("Loading model from '%s'", str_model_path));
-        if (!model_loader.init_from_file(model_path)) {
-            ERR_PRINT(vformat("Model loader failed: '%s'", str_model_path));
-            return Array();
-        }
-    }
-    if (loadclip) {
-        printlog(vformat("loading clip_l from '%s'", str_clip_l_path));
-        if (!model_loader.init_from_file(clip_l_path, "text_encoders.clip_l.")) {
-            ERR_PRINT(vformat("loading clip_l from '%s' failed", str_clip_l_path));
-        }
-        if (!str_t5xxl_path.is_empty()) {
-            printlog(vformat("loading t5xxl from '%s'", str_t5xxl_path));
-            if (!model_loader.init_from_file(t5xxl_path, "text_encoders.t5xxl.")) {
-                ERR_PRINT(vformat("loading t5xxl from '%s' failed", str_t5xxl_path));
-            }
-        }
-    }
-    if (loaddiffusion) {
-        printlog(vformat("loading diffusion model from '%s'", str_diffusion_model_path));
-        if (!model_loader.init_from_file(diffusion_model_path, "model.diffusion_model.")) {
-            ERR_PRINT(vformat("loading diffusion model from '%s' failed", str_diffusion_model_path));
-        }
-    }
-    if (loadvae) {
-        printlog(vformat("loading vae from '%s'", str_vae_path));
-        if (!model_loader.init_from_file(vae_path, "vae.")) {
-            ERR_PRINT(vformat("loading vae from '%s' failed", str_vae_path));
-        }
+    printlog(vformat("Loading model from '%s'", str_model_path));
+    if (!model_loader.init_from_file(model_path)) {
+        ERR_PRINT(vformat("Model loader failed: '%s'", str_model_path));
+        return Array();
     }
 
     /* Get version */
@@ -410,7 +378,7 @@ Array SDModelLoader::load_from_file(Backend res_backend,
         return Array();
     }
     printlog(vformat("Version: %s ", model_version_to_str[version]));
-    if (loadmodel && version == VERSION_SDXL) {
+    if (version == VERSION_SDXL) {
         WARN_PRINT(vformat(
             "### It looks like you are using SDXL model. ###"
             "If you find that the generated images are completely black, "
@@ -454,69 +422,58 @@ Array SDModelLoader::load_from_file(Backend res_backend,
     std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision;  // for svd
     std::shared_ptr<DiffusionModel> diffusion_model;
     std::shared_ptr<AutoEncoderKL> first_stage_model;
-    std::shared_ptr<TinyAutoEncoder> tae_first_stage;
+
+    Backend clip_backend_res = res_backend;
+    Backend vae_backend_res = res_backend;
+    ggml_backend_t clip_backend.get_backend();
+    ggml_backend_t vae_backend.get_backend();
 
     if (version == VERSION_SVD) {
-        if (loadmodel || loadclip) {
-            clip_vision = std::make_shared<FrozenCLIPVisionEmbedder>(backend, conditioner_wtype);
-            clip_vision->alloc_params_buffer();
-            clip_vision->get_param_tensors(tensors);
-        }
-        if (loadmodel || loaddiffusion) {
-            diffusion_model = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-            diffusion_model->alloc_params_buffer();
-            diffusion_model->get_param_tensors(tensors);
-        }
-        if (loadmodel || loadvae) {
-            first_stage_model = std::make_shared<AutoEncoderKL>(backend, vae_wtype, vae_decode_only, true, version);
-            first_stage_model->alloc_params_buffer();
-            first_stage_model->get_param_tensors(tensors, "first_stage_model");
-        }
+        clip_vision = std::make_shared<FrozenCLIPVisionEmbedder>(backend, conditioner_wtype);
+        clip_vision->alloc_params_buffer();
+        clip_vision->get_param_tensors(tensors);
+
+        diffusion_model = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
+        diffusion_model->alloc_params_buffer();
+        diffusion_model->get_param_tensors(tensors);
+
+        first_stage_model = std::make_shared<AutoEncoderKL>(backend, vae_wtype, vae_only_decode, true, version);
+        first_stage_model->alloc_params_buffer();
+        first_stage_model->get_param_tensors(tensors, "first_stage_model");
     } else {
-        if (loadmodel || loadclip) {
-            clip_backend   = backend;
-            bool use_t5xxl = !str_t5xxl_path.is_empty();
-            if (!ggml_backend_is_cpu(backend) && use_t5xxl && conditioner_wtype != GGML_TYPE_F32) {
-                clip_on_cpu = true;
-                printlog(vformat("Clip will on cpu."));
-            }
-            if (clip_on_cpu && !ggml_backend_is_cpu(backend)) {
-                printlog(vformat("CLIP: Using CPU backend"));
-                clip_backend = ggml_backend_cpu_init();
-            }
-            if (version == VERSION_SD3_2B) {
-                cond_stage_model = std::make_shared<SD3CLIPEmbedder>(clip_backend, conditioner_wtype);
-                diffusion_model  = std::make_shared<MMDiTModel>(backend, diffusion_model_wtype, version);
-            } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-                cond_stage_model = std::make_shared<FluxCLIPEmbedder>(clip_backend, conditioner_wtype);
-                diffusion_model  = std::make_shared<FluxModel>(backend, diffusion_model_wtype, version);
-            } else {
-                cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, embeddings_path, version);
-                diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
-            }
-            cond_stage_model->alloc_params_buffer();
-            cond_stage_model->get_param_tensors(tensors);
-
-            diffusion_model->alloc_params_buffer();
-            diffusion_model->get_param_tensors(tensors);
+        if (clip_on_cpu && !ggml_backend_is_cpu(backend)) {
+            printlog(vformat("CLIP: Using CPU"));
+            clip_backend_res = create_backend(-1, true);
         }
-
-        if (loadvae) {
-            if (vae_on_cpu && !ggml_backend_is_cpu(backend)) {
-                LOG_INFO("VAE Autoencoder: Using CPU backend");
-                vae_backend = ggml_backend_cpu_init();
-            } else {
-                vae_backend = backend;
-            }
-            first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_wtype, vae_decode_only, false, version);
-            first_stage_model->alloc_params_buffer();
-            first_stage_model->get_param_tensors(tensors, "first_stage_model");
+        if (vae_on_cpu && !ggml_backend_is_cpu(backend)) {
+            printlog(vformat("VAE: Using CPU"));
+            vae_backend_res = create_backend(-1, true);
+        }
+        clip_backend = clip_backend_res.get_backend();
+        vae_backend = vae_backend_res.get_backend();
+        
+        if (version == VERSION_SD3_2B) {
+            cond_stage_model = std::make_shared<SD3CLIPEmbedder>(clip_backend, conditioner_wtype);
+            diffusion_model  = std::make_shared<MMDiTModel>(backend, diffusion_model_wtype, version);
+        } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+            cond_stage_model = std::make_shared<FluxCLIPEmbedder>(clip_backend, conditioner_wtype);
+            diffusion_model  = std::make_shared<FluxModel>(backend, diffusion_model_wtype, version);
         } else {
-            tae_first_stage = std::make_shared<TinyAutoEncoder>(backend, vae_wtype, vae_decode_only);
+            cond_stage_model = std::make_shared<FrozenCLIPEmbedderWithCustomWords>(clip_backend, conditioner_wtype, embeddings_path, version);
+            diffusion_model  = std::make_shared<UNetModel>(backend, diffusion_model_wtype, version);
         }
+        cond_stage_model->alloc_params_buffer();
+        cond_stage_model->get_param_tensors(tensors);
+
+        diffusion_model->alloc_params_buffer();
+        diffusion_model->get_param_tensors(tensors);
+
+        first_stage_model = std::make_shared<AutoEncoderKL>(vae_backend, vae_wtype, vae_decode_only, false, version);
+        first_stage_model->alloc_params_buffer();
+        first_stage_model->get_param_tensors(tensors, "first_stage_model");
     }
 
-    /* Memory */
+    /* load weights */
     struct ggml_init_params params;
     params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
     params.mem_buffer = NULL;
@@ -527,18 +484,13 @@ Array SDModelLoader::load_from_file(Backend res_backend,
     ggml_tensor* alphas_cumprod_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, TIMESTEPS);
     calculate_alphas_cumprod((float*)alphas_cumprod_tensor->data);
 
-    
-    // load weights
     printlog(vformat("loading weights"));
 
     int64_t t0 = ggml_time_ms();
 
     std::set<std::string> ignore_tensors;
     tensors["alphas_cumprod"] = alphas_cumprod_tensor;
-    if (use_tiny_autoencoder) {
-        ignore_tensors.insert("first_stage_model.");
-    }
-    if (vae_decode_only) {
+    if (vae_only_decode) {
         ignore_tensors.insert("first_stage_model.encoder");
         ignore_tensors.insert("first_stage_model.quant");
     }
@@ -547,12 +499,12 @@ Array SDModelLoader::load_from_file(Backend res_backend,
     }
     bool success = model_loader.load_tensors(tensors, backend, ignore_tensors);
     if (!success) {
-        LOG_ERROR("load tensors from model loader failed");
+        ERR_PRINT(vformat("load tensors from model loader failed"));
         ggml_free(ctx);
         return Array();
     }
 
-/*  加载空间计算
+    /* mem_size */
     // LOG_DEBUG("model size = %.2fMB", total_size / 1024.0 / 1024.0);
 
     if (version == VERSION_SVD) {
@@ -562,33 +514,14 @@ Array SDModelLoader::load_from_file(Backend res_backend,
     } else {
         size_t clip_params_mem_size = cond_stage_model->get_params_buffer_size();
         size_t unet_params_mem_size = diffusion_model->get_params_buffer_size();
-        size_t vae_params_mem_size  = 0;
-        if (!use_tiny_autoencoder) {
-            vae_params_mem_size = first_stage_model->get_params_buffer_size();
-        } else {
-            if (!tae_first_stage->load_from_file(taesd_path)) {
-                return false;
-            }
-            vae_params_mem_size = tae_first_stage->get_params_buffer_size();
-        }
-        size_t control_net_params_mem_size = 0;
-        if (control_net) {
-            if (!control_net->load_from_file(control_net_path)) {
-                return false;
-            }
-            control_net_params_mem_size = control_net->get_params_buffer_size();
-        }
-        size_t pmid_params_mem_size = 0;
-        if (stacked_id) {
-            pmid_params_mem_size = pmid_model->get_params_buffer_size();
-        }
-
+        size_t vae_params_mem_size  = first_stage_model->get_params_buffer_size();
+        
         size_t total_params_ram_size  = 0;
         size_t total_params_vram_size = 0;
         if (ggml_backend_is_cpu(clip_backend)) {
-            total_params_ram_size += clip_params_mem_size + pmid_params_mem_size;
+            total_params_ram_size += clip_params_mem_size
         } else {
-            total_params_vram_size += clip_params_mem_size + pmid_params_mem_size;
+            total_params_vram_size += clip_params_mem_size
         }
 
         if (ggml_backend_is_cpu(backend)) {
@@ -604,7 +537,7 @@ Array SDModelLoader::load_from_file(Backend res_backend,
         }
 
         size_t total_params_size = total_params_ram_size + total_params_vram_size;
-        LOG_INFO(
+        printlog(vformat(
             "total params memory size = %.2fMB (VRAM %.2fMB, RAM %.2fMB): "
             "clip %.2fMB(%s), unet %.2fMB(%s), vae %.2fMB(%s)",
             total_params_size / 1024.0 / 1024.0,
@@ -615,23 +548,33 @@ Array SDModelLoader::load_from_file(Backend res_backend,
             unet_params_mem_size / 1024.0 / 1024.0,
             ggml_backend_is_cpu(backend) ? "RAM" : "VRAM",
             vae_params_mem_size / 1024.0 / 1024.0,
-            ggml_backend_is_cpu(vae_backend) ? "RAM" : "VRAM",)
+            ggml_backend_is_cpu(vae_backend) ? "RAM" : "VRAM",))
     }
-
     int64_t t1 = ggml_time_ms();
-    LOG_INFO("loading model from '%s' completed, taking %.2fs", model_path.c_str(), (t1 - t0) * 1.0f / 1000);
-*/
-    
+    printlog(vformat("loading model from '%s' completed, taking %.2fs", str_model_path, (t1 - t0) * 1.0f / 1000));
+
     // check is_using_v_parameterization_for_sd2
     bool is_using_v_parameterization = (version == VERSION_SD2 && is_using_v_parameterization_for_sd2(ctx));
     
-    Diffusion diffusion_res = new Diffusion(str_model_path, 
-                                            is_using_v_parameterization,
-                                            res_backend, 
-                                            version,
-                                            schedule);
-    
-    
+    /* denoiser */
+    std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
+    if (version == VERSION_SD3_2B) {
+        printlog(vformat("running in FLOW mode"));
+        denoiser = std::make_shared<DiscreteFlowDenoiser>();
+    } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
+        printlog(vformat("running in Flux FLOW mode"));
+        float shift = 1.15f;
+        if (version == VERSION_FLUX_SCHNELL) {
+            shift = 1.0f;  // TODO: validate
+        }
+        denoiser = std::make_shared<FluxFlowDenoiser>(shift);
+    } else if (version == VERSION_SVD || is_using_v_parameterization) {
+        printlog(vformat("running in v-prediction mode"));
+        denoiser = std::make_shared<CompVisVDenoiser>();
+    } else {
+        printlog(vformat("running in eps-prediction mode"));
+    }
+
     auto comp_vis_denoiser = std::dynamic_pointer_cast<CompVisDenoiser>(denoiser);
     if (comp_vis_denoiser) {
         for (int i = 0; i < TIMESTEPS; i++) {
@@ -639,8 +582,33 @@ Array SDModelLoader::load_from_file(Backend res_backend,
             comp_vis_denoiser->log_sigmas[i] = std::log(comp_vis_denoiser->sigmas[i]);
         }
     }
-
-    LOG_DEBUG("finished loaded file");
+    
+    Array model_arr = Array();
+    CLIP clip_res = new CLIP(str_model_path,
+                            res_backend,
+                            version,
+                            conditioner_wtype,
+                            cond_stage_model,
+                            clip_vision);
+    model_arr.push_back(clip_res);
+    Diffusion diffusion_res = new Diffusion(str_model_path,
+                                            res_backend,
+                                            version,
+                                            model_wtype,
+                                            diffusion_model_wtype,
+                                            diffusion_model,
+                                            denoiser);
+    model_arr.push_back(diffusion_res);
+    VAEModel vae_res = new VAEModel(str_model_path,
+                                    res_backend,
+                                    version,
+                                    vae_wtype,
+                                    first_stage_model,
+                                    nullptr,
+                                    vae_only_decode);
+    model_arr.push_back(vae_res);
+    
+    printlog(vformat("Finished loaded file"));
     ggml_free(ctx);
-    return true;
-};
+    return model_arr;
+}

@@ -19,6 +19,8 @@ private:
     ggml_tensor* latent = NULL;
     struct ggml_context* work_ctx = NULL;
 
+    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
+
 protected:
 	static void _bind_methods();
 

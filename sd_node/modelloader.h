@@ -62,6 +62,9 @@ class SDModel : public SDResource {
 	GDCLASS(SDModel, SDResource);
 private:
 	String model_path;
+	Backend backend_res;
+	SDVersion version;
+    ggml_type wtype = GGML_TYPE_COUNT;
 
 protected:
 	static void _bind_methods();
@@ -71,68 +74,80 @@ public:
 	~SDModel();
 	void set_model_path(String p_path);
 	String get_model_path() const;
+	void set_backend(Backend p_backen);
+	Backend get_backend() const;
+	void set_version(SDVersion p_version);
+	SDVersion get_version() const;
+	void set_wtype(ggml_type p_wtype);
+	ggml_type get_wtype() const;
 };
 
 /* CLIP */
 class CLIP : public SDModel {
 	GDCLASS(CLIP, SDModel);
-
-	Backend backend_res;
-	String model_path;
-
-	ggml_backend_t clip_backend = NULL;
-    ggml_type conditioner_wtype = GGML_TYPE_COUNT;
-	
+private:
     std::shared_ptr<Conditioner> cond_stage_model;
     std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision;  // for svd
 
+protected:
+	static void _bind_methods();
+public:
+	CLIP();
+	CLIP(String model_path, 
+		 Backend backend_res, 
+		 SDVersion version, 
+		 ggml_type wtype, 
+		 std::shared_ptr<Conditioner> cond_stage_model, 
+		 std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision = nullptr);
+	~CLIP();
 }
 
 /* Diffusion */
 class Diffusion : public SDModel {
 	GDCLASS(Diffusion, SDModel);
-
 private:
-	Backend backend_res;
-
-	SDVersion version;
-    float scale_factor       = 0.18215f;
-
-	ggml_backend_t backend				= NULL;  // general backend
-    ggml_type model_wtype				= GGML_TYPE_COUNT;
-    ggml_type diffusion_model_wtype		= GGML_TYPE_COUNT;
-    std::shared_ptr<DiffusionModel> diffusion_model;
-
 	Scheduler schedule = DEFAULT;
+    float scale_factor = 0.18215f;
+	ggml_type diffusion_model_wtype = GGML_TYPE_COUNT;
+
+    std::shared_ptr<DiffusionModel> diffusion_model;
     std::shared_ptr<Denoiser> denoiser;
-
-    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
-
-
 
 protected:
 	static void _bind_methods();
 
 public:
-    Diffusion();
+	Diffusion();
 	Diffusion(String model_path, 
-			bool is_using_v_parameterization,
-			Backend backend_res, 
-			SDVersion version,
-			Scheduler schedule);
+			  Backend backend_res, 
+			  SDVersion version, 
+			  ggml_type wtype, 
+			  ggml_type diffusion_wtype, 
+			  std::shared_ptr<DiffusionModel> diffusion_model, 
+			  std::shared_ptr<Denoiser> denoiser, 
+			  Scheduler schedule);
 	~Diffusion();
-	SDVersion get_version() const;
 };
 
 /* VAE TinyAE */
 class VAEModel : public SDModel {
 	GDCLASS(VAEModel, SDModel);
+private:
+	bool decode_only;
+    std::shared_ptr<AutoEncoderKL> first_stage_model;
+    std::shared_ptr<TinyAutoEncoder> tae_first_stage;
 
 protected:
 	static void _bind_methods();
-
 public:
-    VAEModel();
+	VAEModel();
+	VAEModel(String model_path, 
+			 Backend backend_res, 
+			 SDVersion version, 
+			 ggml_type wtype, 
+			 std::shared_ptr<AutoEncoderKL> first_stage_model, 
+			 std::shared_ptr<TinyAutoEncoder> tae_first_stage = nullptr, 
+			 bool decode_only = false);
     ~VAEModel();
 };
 
@@ -163,26 +178,16 @@ public:
 								float linear_start = 0.00085f, 
 								float linear_end   = 0.0120, 
 								int timesteps      = TIMESTEPS);
-	Array load_from_file(Backend res_backend, 
-						String str_model_path, 
-						String str_clip_l_path, 
-						String str_t5xxl_path, 
-						String str_diffusion_model_path, 
-						String str_vae_path, 
-						String str_taesd_path, 
-						ggml_type wtype			= GGML_TYPE_COUNT,
-						schedule_t schedule		= DEFAULT, 
-						bool clip_on_cpu        = false,
-						bool vae_on_cpu         = false, 
-						bool vae_only_decode    = false);
 
-// Node
+	// Node
 	Backend create_backend(int device_index, bool use_cpu = false);
-	Array load_model(String model_path, Backend backend, 
-					Scheduler schedule = DEFAULT, 
-					bool vae_only_decode = false,
-					bool clip_on_cpu = false,
-					ggml_type wtype = GGML_TYPE_COUNT);
+	Array load_model(Backend res_backend, 
+					 String str_model_path, 
+					 Scheduler schedule, 
+					 bool clip_on_cpu = false, 
+					 bool vae_on_cpu = false, 
+					 bool vae_only_decode = false);
+	/*
 	CLIP load_clip(String model_path, Backend backend, 
 					bool clip_on_cpu = false,
 					String t5xxl_path = "",
@@ -194,7 +199,7 @@ public:
 						bool only_decode = false,
 						bool use_tiny_ae = false,
 						ggml_type wtype = GGML_TYPE_COUNT);
-	
+	*/
 };
 
 #endif // MODEL_LOADER_H
