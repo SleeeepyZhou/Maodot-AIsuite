@@ -113,6 +113,15 @@ void Backend::_bind_methods() {
 SDModel::SDModel() {
 }
 SDModel::~SDModel() {
+    
+}
+
+void SDModel::free_sd_ctx(sd_ctx_t* sd_ctx) {
+    if (sd_ctx->sd != NULL) {
+        delete sd_ctx->sd;
+        sd_ctx->sd = NULL;
+    }
+    free(sd_ctx);
 }
 
 void SDModel::set_model_path(String p_path) {
@@ -159,45 +168,6 @@ void SDModel::_bind_methods() {
     BIND_ENUM_CONSTANT(VERSION_COUNT);
 }
 
-// CLIP
-CLIP::CLIP(){
-}
-CLIP::~CLIP(){
-    cond_stage_model->free_params_buffer();
-    clip_vision->free_params_buffer();
-}
-
-std::shared_ptr<Conditioner> CLIP::get_cond_stage_model() const {
-	return cond_stage_model;
-}
-std::shared_ptr<FrozenCLIPVisionEmbedder> CLIP::get_clip_vision() const {
-	return clip_vision;
-}
-
-void CLIP::_bind_methods() {
-}
-
-// Diffusion
-Diffusion::Diffusion() {
-}
-Diffusion::~Diffusion() {
-    diffusion_model->free_params_buffer();
-}
-
-void Diffusion::_bind_methods() {
-}
-
-// VAE
-VAEModel::VAEModel() {
-}
-VAEModel::~VAEModel() {
-    first_stage_model->free_params_buffer();
-    tae_first_stage->free_params_buffer();
-}
-
-void VAEModel::_bind_methods() {
-}
-
 // SDModelLoader
 SDModelLoader::SDModelLoader() {
 }
@@ -223,67 +193,7 @@ void SDModelLoader::_bind_methods() {
 }
 
 
-bool SDModelLoader::is_using_v_parameterization_for_sd2(ggml_context* work_ctx) {
-    if (n_threads <= 0) {
-        n_threads = get_sys_physical_cores();
-    }
-    struct ggml_tensor* x_t = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 4, 1);
-    ggml_set_f32(x_t, 0.5);
-    struct ggml_tensor* c = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 1024, 2, 1, 1);
-    ggml_set_f32(c, 0.5);
-
-    struct ggml_tensor* timesteps = ggml_new_tensor_1d(work_ctx, GGML_TYPE_F32, 1);
-    ggml_set_f32(timesteps, 999);
-    int64_t t0              = ggml_time_ms();
-    struct ggml_tensor* out = ggml_dup_tensor(work_ctx, x_t);
-    diffusion_model->compute(n_threads, x_t, timesteps, c, NULL, NULL, NULL, -1, {}, 0.f, &out);
-    diffusion_model->free_compute_buffer();
-
-    double result = 0.f;
-    {
-        float* vec_x   = (float*)x_t->data;
-        float* vec_out = (float*)out->data;
-
-        int64_t n = ggml_nelements(out);
-
-        for (int i = 0; i < n; i++) {
-            result += ((double)vec_out[i] - (double)vec_x[i]);
-        }
-        result /= n;
-    }
-    int64_t t1 = ggml_time_ms();
-    LOG_DEBUG("check is_using_v_parameterization_for_sd2, taking %.2fs", (t1 - t0) * 1.0f / 1000);
-    return result < -1;
-}
-void SDModelLoader::calculate_alphas_cumprod(float* alphas_cumprod,
-                                            float linear_start,
-                                            float linear_end,
-                                            int timesteps) {
-    float ls_sqrt = sqrtf(linear_start);
-    float le_sqrt = sqrtf(linear_end);
-    float amount  = le_sqrt - ls_sqrt;
-    float product = 1.0f;
-    for (int i = 0; i < timesteps; i++) {
-        float beta = ls_sqrt + amount * ((float)i / (timesteps - 1));
-        product *= 1.0f - powf(beta, 2.0f);
-        alphas_cumprod[i] = product;
-    }
-}
-
 /* Model load */
-CLIP::CLIP(String model_path,
-           Backend backend_res,
-           SDVersion version,
-           ggml_type wtype,
-           std::shared_ptr<Conditioner> cond_stage_model,
-           std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision):
-           cond_stage_model(cond_stage_model),
-           clip_vision(clip_vision) {
-    set_model_path(model_path);
-    set_backend(backend_res);
-    set_version(version);
-    set_wtype(wtype);
-}
 
 Diffusion::Diffusion(String model_path,
                      Backend backend_res,
@@ -345,23 +255,6 @@ Diffusion::Diffusion(String model_path,
                 abort();
         }
     }
-}
-
-
-VAEModel::VAEModel(String model_path,
-                   Backend backend_res,
-                   SDVersion version,
-                   ggml_type wtype,
-                   std::shared_ptr<AutoEncoderKL> first_stage_model,
-                   std::shared_ptr<TinyAutoEncoder> tae_first_stage,
-                   bool decode_only = false) :
-                   first_stage_model(first_stage_model),
-                   tae_first_stage(tae_first_stage),
-                   decode_only(decode_only) {
-    set_model_path(model_path);
-    set_backend(backend_res);
-    set_version(version);
-    set_wtype(wtype);
 }
 
 Array SDModelLoader::load_model(Backend res_backend,

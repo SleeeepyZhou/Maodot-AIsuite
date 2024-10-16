@@ -6,11 +6,7 @@
 #include "stablediffusion.h"
 #include "ggml_extend.hpp"
 
-#include "conditioner.hpp"
-#include "diffusion_model.hpp"
-#include "denoiser.hpp"
-#include "vae.hpp"
-#include "tae.hpp"
+#include "sdmodel.hpp"
 
 enum SDVersion {
 	VERSION_SD1,
@@ -58,13 +54,16 @@ public:
 }
 
 /* SDmodel */
-class SDModel : public SDResource {
-	GDCLASS(SDModel, SDResource);
+class SDModel : public StableDiffusion {
+	GDCLASS(SDModel, StableDiffusion);
 private:
-	String model_path;
-	Backend backend_res;
 	SDVersion version;
-    ggml_type wtype = GGML_TYPE_COUNT;
+	String model_path;
+	Backend backend;
+	Backend clip_backend;
+	Backend vae_backend;
+
+	StableDiffusionGGML* sd = NULL;
 
 protected:
 	static void _bind_methods();
@@ -82,93 +81,13 @@ public:
 	ggml_type get_wtype() const;
 };
 
-/* CLIP */
-class CLIP : public SDModel {
-	GDCLASS(CLIP, SDModel);
-private:
-    std::shared_ptr<Conditioner> cond_stage_model;
-    std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision;  // for svd
-
-protected:
-	static void _bind_methods();
-public:
-	CLIP();
-	CLIP(String model_path, 
-		 Backend backend_res, 
-		 SDVersion version, 
-		 ggml_type wtype, 
-		 std::shared_ptr<Conditioner> cond_stage_model, 
-		 std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision = nullptr);
-	~CLIP();
-
-	std::shared_ptr<Conditioner> get_cond_stage_model() const;
-	std::shared_ptr<FrozenCLIPVisionEmbedder> get_clip_vision() const;
-}
-
-/* Diffusion */
-class Diffusion : public SDModel {
-	GDCLASS(Diffusion, SDModel);
-private:
-	Scheduler schedule = DEFAULT;
-    float scale_factor = 0.18215f;
-	ggml_type diffusion_wtype = GGML_TYPE_COUNT;
-
-    std::shared_ptr<DiffusionModel> diffusion_model;
-    std::shared_ptr<Denoiser> denoiser;
-	std::map<std::string, struct ggml_tensor*> tensors;
-
-protected:
-	static void _bind_methods();
-
-public:
-	Diffusion();
-	Diffusion(String model_path, 
-			  Backend backend_res, 
-			  SDVersion version, 
-			  std::shared_ptr<DiffusionModel> diffusion_model, 
-			  std::shared_ptr<Denoiser> denoiser, 
-			  std::map<std::string, struct ggml_tensor*> tensors,
-			  Scheduler schedule = DEFAULT,
-			  ggml_type wtype = GGML_TYPE_COUNT, 
-			  ggml_type diffusion_wtype = GGML_TYPE_COUNT);
-	~Diffusion();
-};
-
-/* VAE TinyAE */
-class VAEModel : public SDModel {
-	GDCLASS(VAEModel, SDModel);
-private:
-	bool decode_only;
-    std::shared_ptr<AutoEncoderKL> first_stage_model;
-    std::shared_ptr<TinyAutoEncoder> tae_first_stage;
-
-protected:
-	static void _bind_methods();
-public:
-	VAEModel();
-	VAEModel(String model_path, 
-			 Backend backend_res, 
-			 SDVersion version, 
-			 ggml_type wtype, 
-			 std::shared_ptr<AutoEncoderKL> first_stage_model, 
-			 std::shared_ptr<TinyAutoEncoder> tae_first_stage = nullptr, 
-			 bool decode_only = false);
-    ~VAEModel();
-};
 
 /* loader */
 class SDModelLoader : public StableDiffusion {
 	GDCLASS(SDModelLoader, StableDiffusion);
 
 private:
-	const char* model_version_to_str[] = {
-		"SD 1.x",
-		"SD 2.x",
-		"SDXL",
-		"SVD",
-		"SD3 2B",
-		"Flux Dev",
-		"Flux Schnell"};
+	
 
 protected:
 	static void _bind_methods();
