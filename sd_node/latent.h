@@ -24,9 +24,11 @@ protected:
 public:
     Latent();
     ~Latent();
+	void set_width(const int &p_width);
 	int get_width() const;
+	void set_height(const int &p_height);
 	int get_height() const;
-	bool create_latent(SDVersion version);
+	bool create_latent(SDVersion version = VERSION_SD1);
 
     struct ggml_context* get_work_ctx() const;
     struct ggml_tensor* get_latent() const;

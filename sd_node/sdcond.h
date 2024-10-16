@@ -32,7 +32,7 @@ protected:
 public:
     SDControl();
     ~SDControl();
-    SDCond text_encoders(CLIP clip_res, String prompt);
+    SDCond text_encoders(CLIP clip_res, String prompt, int clip_skip = -1);
 }
 
 #endif // COND_H

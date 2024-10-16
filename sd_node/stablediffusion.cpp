@@ -91,7 +91,34 @@ SDControl::SDControl() {
 SDControl::~SDControl() {
 }
 
-SDCond SDControl::text_encoders(CLIP clip_res, String prompt) {
+SDCond SDControl::text_encoders(CLIP clip_res, String prompt, int clip_skip) {
+    // Get condition
+    int64_t t0 = ggml_time_ms();
+    std::shared_ptr<Conditioner> cond_stage_model = clip_res.get_cond_stage_model();
+    SDCondition cond = cond_stage_model->get_learned_condition(work_ctx,
+                                                            n_threads,
+                                                            prompt,
+                                                            clip_skip,
+                                                            width,
+                                                            height,
+                                                            sd_ctx->sd->diffusion_model->get_adm_in_channels());
+
+    SDCondition uncond;
+    bool force_zero_embeddings = false;
+    if (sd_ctx->sd->version == VERSION_SDXL && negative_prompt.size() == 0) {
+        force_zero_embeddings = true;
+    }
+    uncond = sd_ctx->sd->cond_stage_model->get_learned_condition(work_ctx,
+                                                                n_threads,
+                                                                negative_prompt,
+                                                                clip_skip,
+                                                                width,
+                                                                height,
+                                                                sd_ctx->sd->diffusion_model->get_adm_in_channels(),
+                                                                force_zero_embeddings);
+
+    int64_t t1 = ggml_time_ms();
+    LOG_INFO("get_learned_condition completed, taking %" PRId64 " ms", t1 - t0);
 	return SDCond();
 }
 
@@ -183,7 +210,6 @@ int Latent::get_height() const {
 struct ggml_context *Latent::get_work_ctx() const {
 	return work_ctx;
 }
-
 struct ggml_tensor *Latent::get_latent() const {
 	return latent;
 }
@@ -232,6 +258,14 @@ bool Latent::create_latent(SDVersion version) {
 }
 
 void Latent::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("set_width", "width"), &Latent::set_width);
+    ClassDB::bind_method(D_METHOD("get_width"), &Latent::get_width);
+    ClassDB::bind_method(D_METHOD("set_height", "height"), &Latent::set_height);
+    ClassDB::bind_method(D_METHOD("get_height"), &Latent::get_height);
+    ClassDB::bind_method(D_METHOD("create_latent", "sd_version"), &Latent::create_latent);
+
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "width", PROPERTY_HINT_RANGE, "32,4096"),"set_width","get_width");
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "height", PROPERTY_HINT_RANGE, "32,4096"),"set_height","get_height");
 
 }
 

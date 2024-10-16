@@ -163,6 +163,15 @@ void SDModel::_bind_methods() {
 CLIP::CLIP(){
 }
 CLIP::~CLIP(){
+    cond_stage_model->free_params_buffer();
+    clip_vision->free_params_buffer();
+}
+
+std::shared_ptr<Conditioner> CLIP::get_cond_stage_model() const {
+	return cond_stage_model;
+}
+std::shared_ptr<FrozenCLIPVisionEmbedder> CLIP::get_clip_vision() const {
+	return clip_vision;
 }
 
 void CLIP::_bind_methods() {
@@ -172,6 +181,7 @@ void CLIP::_bind_methods() {
 Diffusion::Diffusion() {
 }
 Diffusion::~Diffusion() {
+    diffusion_model->free_params_buffer();
 }
 
 void Diffusion::_bind_methods() {
@@ -181,6 +191,8 @@ void Diffusion::_bind_methods() {
 VAEModel::VAEModel() {
 }
 VAEModel::~VAEModel() {
+    first_stage_model->free_params_buffer();
+    tae_first_stage->free_params_buffer();
 }
 
 void VAEModel::_bind_methods() {

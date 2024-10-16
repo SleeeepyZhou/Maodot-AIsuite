@@ -100,6 +100,9 @@ public:
 		 std::shared_ptr<Conditioner> cond_stage_model, 
 		 std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision = nullptr);
 	~CLIP();
+
+	std::shared_ptr<Conditioner> get_cond_stage_model() const;
+	std::shared_ptr<FrozenCLIPVisionEmbedder> get_clip_vision() const;
 }
 
 /* Diffusion */
