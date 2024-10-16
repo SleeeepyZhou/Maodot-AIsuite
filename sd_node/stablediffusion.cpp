@@ -36,20 +36,6 @@ StableDiffusion::StableDiffusion() {
 StableDiffusion::~StableDiffusion() {
 }
 
-void StableDiffusion::printlog(String out_log) {
-    if (print_log) {
-        print_line(out_log);
-    }
-    emit_signal(SNAME("sd_log"), out_log);
-}
-
-void StableDiffusion::set_print_log(bool p_print_log) {
-	print_log = p_print_log;
-}
-bool StableDiffusion::is_print_log() const {
-	return print_log;
-}
-
 void StableDiffusion::set_n_threads(bool p_threads) {
     n_threads = p_threads;
 }
@@ -60,24 +46,13 @@ int StableDiffusion::get_n_threads() const {
 Array StableDiffusion::get_vk_devices() const {
 	return DeviceInfo::getInstance().get_available_devices();
 }
-int StableDiffusion::get_sys_physical_cores() const {
-	return DeviceInfo::getInstance().get_core_count();
-}
 
 void StableDiffusion::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("set_print_log", "enable"), &StableDiffusion::set_print_log);
-    ClassDB::bind_method(D_METHOD("is_print_log"), &StableDiffusion::is_print_log);
-
     ClassDB::bind_method(D_METHOD("set_n_threads", "threads"), &StableDiffusion::set_n_threads);
     ClassDB::bind_method(D_METHOD("get_n_threads"), &StableDiffusion::get_n_threads);
 
     ClassDB::bind_method(D_METHOD("get_vk_devices"), &StableDiffusion::get_vk_devices);
-    ClassDB::bind_method(D_METHOD("get_sys_physical_cores"), &StableDiffusion::get_sys_physical_cores);
-
-    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_log"), "set_print_log", "is_print_log");
     ADD_PROPERTY(PropertyInfo(Variant::INT, "n_threads", PROPERTY_HINT_RANGE, "-1,512"), "set_n_threads", "get_n_threads");
-
-    ADD_SIGNAL(MethodInfo("sd_log", PropertyInfo(Variant::STRING, "SD_log")));
 }
 
 
@@ -98,7 +73,6 @@ Control
     out SDcond
 
 */
-
 
 
 // SDCond
@@ -188,8 +162,9 @@ latent
 Latent::Latent() {
 }
 Latent::~Latent() {
-    ggml_free(work_ctx);
-    printlog(vformat("Work context free."))
+    if (work_ctx) {
+        ggml_free(work_ctx)
+    }
 }
 
 void Latent::set_width(const int &p_width) {
@@ -198,7 +173,6 @@ void Latent::set_width(const int &p_width) {
 int Latent::get_width() const {
 	return width;
 }
-
 void Latent::set_height(const int &p_height) {
     height = p_height
 }
@@ -206,7 +180,15 @@ int Latent::get_height() const {
 	return height;
 }
 
-void Latent::create_latent(SDVersion version) {
+struct ggml_context *Latent::get_work_ctx() const {
+	return work_ctx;
+}
+
+struct ggml_tensor *Latent::get_latent() const {
+	return latent;
+}
+
+bool Latent::create_latent(SDVersion version) {
     struct ggml_init_params params;
     params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
     if (version == VERSION_SD3_2B) {
@@ -214,9 +196,6 @@ void Latent::create_latent(SDVersion version) {
     }
     if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
         params.mem_size *= 4;
-    }
-    if (sd_ctx->sd->stacked_id) {
-        params.mem_size += static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
     }
     params.mem_size += width * height * 3 * sizeof(float);
     params.mem_size *= batch_count;
@@ -226,9 +205,11 @@ void Latent::create_latent(SDVersion version) {
 
     work_ctx = ggml_init(params);
     if (!work_ctx) {
-        ERR_PRINT("Context create failed");
-        return NULL;
+        ERR_PRINT(vformat("Context create failed"));
+        return false;
     }
+
+    printlog(vformat("Work context memory size = %.2fMB", params.mem_size / 1024.0 / 1024.0))
 
     int C = 4;
     if (version == VERSION_SD3_2B) {
@@ -238,27 +219,18 @@ void Latent::create_latent(SDVersion version) {
     }
     int W                    = width / 8;
     int H                    = height / 8;
-    ggml_tensor* init_latent = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
+    latent = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
     if (version == VERSION_SD3_2B) {
-        ggml_set_f32(init_latent, 0.0609f);
+        ggml_set_f32(latent, 0.0609f);
     } else if (version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
-        ggml_set_f32(init_latent, 0.1159f);
+        ggml_set_f32(latent, 0.1159f);
     } else {
-        ggml_set_f32(init_latent, 0.f);
+        ggml_set_f32(latent, 0.f);
     }
+    printlog(vformat("Latent created"))
+    return true
 }
 
-/*
-ggml_tensor *Latent::get_latent() const {
-	return latent;
-}
-ggml_context *Latent::get_work_ctx() const {
-	return work_ctx;
-}
-
-void Latent::free_latent() {
-}
-*/
 void Latent::_bind_methods() {
 
 }

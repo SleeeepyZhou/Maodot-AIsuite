@@ -940,53 +940,10 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
                     bool normalize_input,
                     const char* input_id_images_path_c_str) {
     LOG_DEBUG("txt2img %dx%d", width, height);
-    if (sd_ctx == NULL) {
-        return NULL;
-    }
-
-    struct ggml_init_params params;
-    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-    if (sd_ctx->sd->version == VERSION_SD3_2B) {
-        params.mem_size *= 3;
-    }
-    if (sd_ctx->sd->version == VERSION_FLUX_DEV || sd_ctx->sd->version == VERSION_FLUX_SCHNELL) {
-        params.mem_size *= 4;
-    }
-    if (sd_ctx->sd->stacked_id) {
-        params.mem_size += static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
-    }
-    params.mem_size += width * height * 3 * sizeof(float);
-    params.mem_size *= batch_count;
-    params.mem_buffer = NULL;
-    params.no_alloc   = false;
-    // LOG_DEBUG("mem_size %u ", params.mem_size);
-
-    struct ggml_context* work_ctx = ggml_init(params);
-    if (!work_ctx) {
-        LOG_ERROR("ggml_init() failed");
-        return NULL;
-    }
 
     size_t t0 = ggml_time_ms();
 
     std::vector<float> sigmas = sd_ctx->sd->denoiser->get_sigmas(sample_steps);
-
-    int C = 4;
-    if (sd_ctx->sd->version == VERSION_SD3_2B) {
-        C = 16;
-    } else if (sd_ctx->sd->version == VERSION_FLUX_DEV || sd_ctx->sd->version == VERSION_FLUX_SCHNELL) {
-        C = 16;
-    }
-    int W                    = width / 8;
-    int H                    = height / 8;
-    ggml_tensor* init_latent = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
-    if (sd_ctx->sd->version == VERSION_SD3_2B) {
-        ggml_set_f32(init_latent, 0.0609f);
-    } else if (sd_ctx->sd->version == VERSION_FLUX_DEV || sd_ctx->sd->version == VERSION_FLUX_SCHNELL) {
-        ggml_set_f32(init_latent, 0.1159f);
-    } else {
-        ggml_set_f32(init_latent, 0.f);
-    }
 
     sd_image_t* result_images = generate_image(sd_ctx,
                                                work_ctx,

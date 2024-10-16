@@ -108,10 +108,11 @@ class Diffusion : public SDModel {
 private:
 	Scheduler schedule = DEFAULT;
     float scale_factor = 0.18215f;
-	ggml_type diffusion_model_wtype = GGML_TYPE_COUNT;
+	ggml_type diffusion_wtype = GGML_TYPE_COUNT;
 
     std::shared_ptr<DiffusionModel> diffusion_model;
     std::shared_ptr<Denoiser> denoiser;
+	std::map<std::string, struct ggml_tensor*> tensors;
 
 protected:
 	static void _bind_methods();
@@ -121,11 +122,12 @@ public:
 	Diffusion(String model_path, 
 			  Backend backend_res, 
 			  SDVersion version, 
-			  ggml_type wtype, 
-			  ggml_type diffusion_wtype, 
 			  std::shared_ptr<DiffusionModel> diffusion_model, 
 			  std::shared_ptr<Denoiser> denoiser, 
-			  Scheduler schedule);
+			  std::map<std::string, struct ggml_tensor*> tensors,
+			  Scheduler schedule = DEFAULT,
+			  ggml_type wtype = GGML_TYPE_COUNT, 
+			  ggml_type diffusion_wtype = GGML_TYPE_COUNT);
 	~Diffusion();
 };
 

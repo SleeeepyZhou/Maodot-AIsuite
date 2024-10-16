@@ -276,11 +276,12 @@ CLIP::CLIP(String model_path,
 Diffusion::Diffusion(String model_path,
                      Backend backend_res,
                      SDVersion version,
-                     ggml_type wtype,
-                     ggml_type diffusion_wtype,
                      std::shared_ptr<DiffusionModel> diffusion_model,
                      std::shared_ptr<Denoiser> denoiser,
-                     Scheduler schedule) :
+			         std::map<std::string, struct ggml_tensor*> tensors,
+                     Scheduler schedule,
+                     ggml_type wtype,
+                     ggml_type diffusion_wtype) :
                      diffusion_wtype(diffusion_wtype),
                      diffusion_model(diffusion_model),
                      denoiser(denoiser),
@@ -475,7 +476,7 @@ Array SDModelLoader::load_model(Backend res_backend,
 
     /* load weights */
     struct ggml_init_params params;
-    params.mem_size   = static_cast<size_t>(10 * 1024) * 1024;  // 10M
+    params.mem_size   = static_cast<size_t>(10 * 1024 * 1024);  // 10M
     params.mem_buffer = NULL;
     params.no_alloc   = false;
     // LOG_DEBUG("mem_size %u ", params.mem_size);
@@ -594,10 +595,12 @@ Array SDModelLoader::load_model(Backend res_backend,
     Diffusion diffusion_res = new Diffusion(str_model_path,
                                             res_backend,
                                             version,
-                                            model_wtype,
-                                            diffusion_model_wtype,
                                             diffusion_model,
-                                            denoiser);
+                                            denoiser,
+                                            tensors,
+                                            schedule,
+                                            model_wtype,
+                                            diffusion_model_wtype);
     model_arr.push_back(diffusion_res);
     VAEModel vae_res = new VAEModel(str_model_path,
                                     res_backend,
