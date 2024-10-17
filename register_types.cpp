@@ -29,11 +29,6 @@ void initialize_ai_suite_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_ABSTRACT_CLASS(SDResource);
 	GDREGISTER_ABSTRACT_CLASS(SDModel);
 
-	GDREGISTER_CLASS(Backend);
-	GDREGISTER_CLASS(CLIP);
-	GDREGISTER_CLASS(Diffusion);
-	GDREGISTER_CLASS(VAEModel);
-
 	GDREGISTER_CLASS(SDCond);
 	GDREGISTER_CLASS(Latent);
 }

@@ -6,8 +6,6 @@
 #include "stablediffusion.h"
 #include "ggml_extend.hpp"
 
-#include "sdmodel.hpp"
-
 enum SDVersion {
 	VERSION_SD1,
 	VERSION_SD2,
@@ -29,59 +27,6 @@ enum Scheduler {
 	N_SCHEDULES
 };
 
-/* backend */
-class Backend : public SDResource {
-	GDCLASS(Backend, SDResource);
-
-private:
-	bool use_cpu = false;
-	ggml_backend_t backend = NULL;  // general backend
-
-protected:
-	static void _bind_methods();
-
-public:
-	Backend();
-	Backend(int _index, bool _cpu = false);
-	~Backend();
-	ggml_backend_t get_backend() const;
-
-	Array get_vk_devices_idx() const;
-	void set_device(int device_index);
-
-	void usecpu(bool p_use);
-	bool is_use_cpu() const;
-}
-
-/* SDmodel */
-class SDModel : public StableDiffusion {
-	GDCLASS(SDModel, StableDiffusion);
-private:
-	SDVersion version;
-	String model_path;
-	Backend backend;
-	Backend clip_backend;
-	Backend vae_backend;
-
-	StableDiffusionGGML* sd = NULL;
-
-protected:
-	static void _bind_methods();
-
-public:
-    SDModel();
-	~SDModel();
-	void set_model_path(String p_path);
-	String get_model_path() const;
-	void set_backend(Backend p_backen);
-	Backend get_backend() const;
-	void set_version(SDVersion p_version);
-	SDVersion get_version() const;
-	void set_wtype(ggml_type p_wtype);
-	ggml_type get_wtype() const;
-};
-
-
 /* loader */
 class SDModelLoader : public StableDiffusion {
 	GDCLASS(SDModelLoader, StableDiffusion);
@@ -97,11 +42,6 @@ public:
 	~SDModelLoader();
 
 // Helper
-	bool is_using_v_parameterization_for_sd2(ggml_context *work_ctx);
-	void calculate_alphas_cumprod(float *alphas_cumprod, 
-								float linear_start = 0.00085f, 
-								float linear_end   = 0.0120, 
-								int timesteps      = TIMESTEPS);
 
 	// Node
 	Backend create_backend(int device_index, bool use_cpu = false);

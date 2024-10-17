@@ -1,6 +1,3 @@
-#ifndef SD_MODEL_HPP
-#define SD_MODEL_HPP
-
 #include "ggml_extend.hpp"
 
 #include "model.h"
@@ -19,80 +16,23 @@
 #include "tae.hpp"
 #include "vae.hpp"
 
+#include "sdmodel.h"
 
-class StableDiffusionGGML {
-private:
-    const char* model_version_to_str[] = {
-		"SD 1.x",
-		"SD 2.x",
-		"SDXL",
-		"SVD",
-		"SD3 2B",
-		"Flux Dev",
-		"Flux Schnell"};
-
-public:
-    int n_threads            = -1;
-    bool free_params_immediately = false;
-    bool print_log = false;
-    std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
-    std::map<std::string, struct ggml_tensor*> tensors;
-
-    /* CLIP */
-    ggml_backend_t clip_backend        = NULL;
-    ggml_type conditioner_wtype        = GGML_TYPE_COUNT;
-    std::shared_ptr<Conditioner> cond_stage_model;
-    std::shared_ptr<FrozenCLIPVisionEmbedder> clip_vision;  // for svd
-
-    /* Controlnet */
-    ggml_backend_t control_net_backend = NULL;
-    std::shared_ptr<ControlNet> control_net;
-
-    /* Diffusion */
-    SDVersion version;
-    ggml_backend_t backend             = NULL;  // general backend
-    float scale_factor                 = 0.18215f;
-    ggml_type model_wtype              = GGML_TYPE_COUNT;
-    ggml_type diffusion_model_wtype    = GGML_TYPE_COUNT;
-    std::shared_ptr<DiffusionModel> diffusion_model;
-    std::shared_ptr<Denoiser> denoiser = std::make_shared<CompVisDenoiser>();
-    
-    /* Photo Maker */
-    bool stacked_id           = false;
-    std::shared_ptr<LoraModel> pmid_lora;
-    std::shared_ptr<PhotoMakerIDEncoder> pmid_model;
-
-    /* Lora */
-    std::string lora_model_dir;
-    std::unordered_map<std::string, float> curr_lora_state;
-
-    /* VAE */
-    ggml_backend_t vae_backend         = NULL;
-    ggml_type vae_wtype                = GGML_TYPE_COUNT;
-    bool vae_decode_only      = false;
-    std::shared_ptr<AutoEncoderKL> first_stage_model;
-    bool vae_tiling           = false;
-    bool use_tiny_autoencoder = false;
-    std::shared_ptr<TinyAutoEncoder> tae_first_stage;
-
-
-    std::string taesd_path;
-
-
-    StableDiffusionGGML() = default;
-
-    StableDiffusionGGML(int n_threads, rng_type_t rng_type, 
-                        ggml_backend_t backend) : 
-                        n_threads(n_threads),
-                        backend(backend) {
+StableDiffusionGGML::StableDiffusionGGML(int n_threads, 
+                                        rng_type_t rng_type, 
+                                        ggml_backend_t backend,
+                                        Object *receiver, const StringName &method): 
+                                        n_threads(n_threads),
+                                        backend(backend),
+                                        callback_receiver(receiver),
+                                        callback_method(method) {
         if (rng_type == STD_DEFAULT_RNG) {
             rng = std::make_shared<STDDefaultRNG>();
         } else if (rng_type == CUDA_RNG) {
             rng = std::make_shared<PhiloxRNG>();
         }
     }
-
-    ~StableDiffusionGGML() {
+StableDiffusionGGML::~StableDiffusionGGML() {
         if (clip_backend != backend) {
             ggml_backend_free(clip_backend);
         }
@@ -105,15 +45,15 @@ public:
         ggml_backend_free(backend);
     }
 
-    /* Helper */
-    void printlog(String out_log) {
-        if (print_log) {
-            print_line(out_log);
-        }
-        emit_signal(SNAME("sd_log"), out_log);
+/* Helper */
+void StableDiffusionGGML::printlog(String out_log) {
+    if (print_log) {
+        print_line(out_log);
     }
+    emit_signal(SNAME("sdmodel_log"), out_log);
+}
 
-    bool is_using_v_parameterization_for_sd2(ggml_context* work_ctx) {
+bool StableDiffusionGGML::is_using_v_parameterization_for_sd2(ggml_context* work_ctx) {
         struct ggml_tensor* x_t = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 8, 8, 4, 1);
         ggml_set_f32(x_t, 0.5);
         struct ggml_tensor* c = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, 1024, 2, 1, 1);
@@ -142,10 +82,8 @@ public:
         LOG_DEBUG("check is_using_v_parameterization_for_sd2, taking %.2fs", (t1 - t0) * 1.0f / 1000);
         return result < -1;
     }
-    void calculate_alphas_cumprod(float* alphas_cumprod,
-                                float linear_start,
-                                float linear_end,
-                                int timesteps) {
+void StableDiffusionGGML::calculate_alphas_cumprod(float *alphas_cumprod, float linear_start, 
+                                                   float linear_end, int timesteps)  {
         float ls_sqrt = sqrtf(linear_start);
         float le_sqrt = sqrtf(linear_end);
         float amount  = le_sqrt - ls_sqrt;
@@ -157,32 +95,16 @@ public:
         }
     }
 
-    /* Model */
-    bool load_from_file(String str_model_path,
-                        ggml_type wtype,
-
-                        bool clip_on_cpu,
-                        String str_clip_l_path,
-                        String str_t5xxl_path,
-
-                        bool control_net_cpu,
-                        String str_embeddings_path,
-                        String str_control_net_path,
-
-                        String str_diffusion_model_path,
-                        String str_id_embeddings_path,
-                        schedule_t schedule,
-                        
-                        bool vae_on_cpu,
-                        bool vae_only_decode,
-                        String str_vae_path,
-                        String str_taesd_path,
-
-                        bool vae_tiling_) {
+/* Model */
+bool StableDiffusionGGML::load_from_file(String str_model_path, ggml_type wtype, 
+                bool clip_on_cpu, String str_clip_l_path, String str_t5xxl_path, 
+                bool control_net_cpu, String str_control_net_path, String str_embeddings_path, 
+                String str_diffusion_model_path, String str_id_embeddings_path, schedule_t schedule, 
+                bool vae_on_cpu, bool vae_only_decode, String str_vae_path, String str_taesd_path, bool vae_tiling_) {
         /*        Function      */
         bool loadclip      = !str_clip_l_path.is_empty();
         bool loaddiffusion = !str_model_path.is_empty() || !str_diffusion_model_path.is_empty();
-        bool loadvae       = !str_vae_path.is_empty() || taesd_path.size() > 0;
+        bool loadvae       = !str_vae_path.is_empty() || !str_taesd_path.is_empty();
         bool usecontrolnet = !str_control_net_path.is_empty();
         use_tiny_autoencoder = !str_taesd_path.is_empty();
 
@@ -574,7 +496,7 @@ public:
         return true;
     }
 
-    void apply_lora(const std::string& lora_name, float multiplier) {
+void StableDiffusionGGML::apply_lora(const std::string &lora_name, float multiplier) {
         int64_t t0                 = ggml_time_ms();
         std::string st_file_path   = path_join(lora_model_dir, lora_name + ".safetensors");
         std::string ckpt_file_path = path_join(lora_model_dir, lora_name + ".ckpt");
@@ -584,12 +506,12 @@ public:
         } else if (file_exists(ckpt_file_path)) {
             file_path = ckpt_file_path;
         } else {
-            ERR_PRINT(vformat("can not find %s or %s for lora %s", st_file_path.c_str(), ckpt_file_path.c_str(), lora_name.c_str());
+            ERR_PRINT(vformat("can not find %s or %s for lora %s", st_file_path.c_str(), ckpt_file_path.c_str(), lora_name.c_str()));
             return;
         }
         LoraModel lora(backend, model_wtype, file_path);
         if (!lora.load_from_file()) {
-            ERR_PRINT(vformat("load lora tensors from %s failed", file_path.c_str());
+            ERR_PRINT(vformat("load lora tensors from %s failed", file_path.c_str()));
             return;
         }
 
@@ -599,12 +521,11 @@ public:
 
         int64_t t1 = ggml_time_ms();
 
-        printlog(vformat("lora '%s' applied, taking %.2fs", lora_name.c_str(), (t1 - t0) * 1.0f / 1000);
+        printlog(vformat("lora '%s' applied, taking %.2fs", lora_name.c_str(), (t1 - t0) * 1.0f / 1000));
     }
-
-    void apply_loras(const std::unordered_map<std::string, float>& lora_state) {
+void StableDiffusionGGML::apply_loras(const std::unordered_map<std::string, float> &lora_state) {
         if (lora_state.size() > 0 && model_wtype != GGML_TYPE_F16 && model_wtype != GGML_TYPE_F32) {
-            ERR_PRINT(vformat("In quantized models when applying LoRA, the images have poor quality.");
+            ERR_PRINT(vformat("In quantized models when applying LoRA, the images have poor quality."));
         }
         std::unordered_map<std::string, float> lora_state_diff;
         for (auto& kv : lora_state) {
@@ -622,7 +543,7 @@ public:
             }
         }
 
-        printlog(vformat("Attempting to apply %lu LoRAs", lora_state.size());
+        printlog(vformat("Attempting to apply %lu LoRAs", lora_state.size()));
 
         for (auto& kv : lora_state_diff) {
             apply_lora(kv.first, kv.second);
@@ -631,24 +552,14 @@ public:
         curr_lora_state = lora_state;
     }
 
-    ggml_tensor* id_encoder(ggml_context* work_ctx,
-                            ggml_tensor* init_img,
-                            ggml_tensor* prompts_embeds,
-                            std::vector<bool>& class_tokens_mask) {
+ggml_tensor *StableDiffusionGGML::id_encoder(ggml_context *work_ctx, ggml_tensor *init_img, ggml_tensor *prompts_embeds, std::vector<bool> &class_tokens_mask) {
         ggml_tensor* res = NULL;
         pmid_model->compute(n_threads, init_img, prompts_embeds, class_tokens_mask, &res, work_ctx);
-
         return res;
     }
-
-    SDCondition get_svd_condition(ggml_context* work_ctx,
-                                  sd_image_t init_image,
-                                  int width,
-                                  int height,
-                                  int fps                    = 6,
-                                  int motion_bucket_id       = 127,
-                                  float augmentation_level   = 0.f,
-                                  bool force_zero_embeddings = false) {
+SDCondition StableDiffusionGGML::get_svd_condition(ggml_context *work_ctx, sd_image_t init_image, 
+                                                    int width, int height, int fps, int motion_bucket_id, 
+                                                    float augmentation_level, bool force_zero_embeddings) {
         // c_crossattn
         int64_t t0                      = ggml_time_ms();
         struct ggml_tensor* c_crossattn = NULL;
@@ -719,20 +630,12 @@ public:
         return {c_crossattn, y, c_concat};
     }
 
-    ggml_tensor* sample(ggml_context* work_ctx,
-                        ggml_tensor* init_latent,
-                        ggml_tensor* noise,
-                        SDCondition cond,
-                        SDCondition uncond,
-                        ggml_tensor* control_hint,
-                        float control_strength,
-                        float min_cfg,
-                        float cfg_scale,
-                        float guidance,
-                        sample_method_t method,
-                        const std::vector<float>& sigmas,
-                        int start_merge_step,
-                        SDCondition id_cond) {
+ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *init_latent, 
+                                        ggml_tensor *noise, SDCondition cond, SDCondition uncond, 
+                                        ggml_tensor *control_hint, float control_strength, 
+                                        float min_cfg, float cfg_scale, float guidance, 
+                                        sample_method_t method, const std::vector<float> &sigmas, 
+                                        int start_merge_step, SDCondition id_cond) {
         size_t steps = sigmas.size() - 1;
         // noise = load_tensor_from_file(work_ctx, "./rand0.bin");
         // print_ggml_tensor(noise);
@@ -870,8 +773,7 @@ public:
         return x;
     }
 
-    // ldm.models.diffusion.ddpm.LatentDiffusion.get_first_stage_encoding
-    ggml_tensor* get_first_stage_encoding(ggml_context* work_ctx, ggml_tensor* moments) {
+ggml_tensor *StableDiffusionGGML::get_first_stage_encoding(ggml_context *work_ctx, ggml_tensor *moments) {
         // ldm.modules.distributions.distributions.DiagonalGaussianDistribution.sample
         ggml_tensor* latent       = ggml_new_tensor_4d(work_ctx, moments->type, moments->ne[0], moments->ne[1], moments->ne[2] / 2, moments->ne[3]);
         struct ggml_tensor* noise = ggml_dup_tensor(work_ctx, latent);
@@ -901,8 +803,7 @@ public:
         }
         return latent;
     }
-
-    ggml_tensor* compute_first_stage(ggml_context* work_ctx, ggml_tensor* x, bool decode) {
+ggml_tensor *StableDiffusionGGML::compute_first_stage(ggml_context *work_ctx, ggml_tensor *x, bool decode){
         int64_t W = x->ne[0];
         int64_t H = x->ne[1];
         int64_t C = 8;
@@ -960,14 +861,126 @@ public:
         }
         return result;
     }
-
-    ggml_tensor* encode_first_stage(ggml_context* work_ctx, ggml_tensor* x) {
+ggml_tensor *StableDiffusionGGML::encode_first_stage(ggml_context *work_ctx, ggml_tensor *x) {
         return compute_first_stage(work_ctx, x, false);
     }
-
-    ggml_tensor* decode_first_stage(ggml_context* work_ctx, ggml_tensor* x) {
+ggml_tensor *StableDiffusionGGML::decode_first_stage(ggml_context *work_ctx, ggml_tensor *x) {
         return compute_first_stage(work_ctx, x, true);
     }
-};
 
-#endif // SD_MODEL_HPP
+void StableDiffusionGGML::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("some_function_stage_1"), &SDMod::some_function_stage_1);
+    ClassDB::bind_method(D_METHOD("some_function_stage_2"), &SDMod::some_function_stage_2);
+}
+
+
+// SDModel
+SDModel::SDModel() {
+}
+SDModel::~SDModel() {
+}
+
+void SDModel::free_sd_ctx(sd_ctx_t* sd_ctx) {
+    if (sd_ctx->sd != NULL) {
+        delete sd_ctx->sd;
+        sd_ctx->sd = NULL;
+    }
+    free(sd_ctx);
+}
+
+void SDModel::set_model_path(String p_path) {
+    model_path = p_path;
+}
+String SDModel::get_model_path() const {
+	return model_path;
+}
+void SDModel::set_backend(Backend p_backen) {
+    backend_res = p_backen;
+}
+Backend SDModel::get_backend() const {
+	return backend_res;
+}
+void SDModel::set_version(SDVersion p_version) {
+    version = p_version;
+}
+SDVersion SDModel::get_version() const {
+	return version;
+}
+void SDModel::set_wtype(ggml_type p_wtype){
+	wtype = p_wtype
+}
+ggml_type SDModel::get_wtype() const {
+	return wtype;
+}
+
+
+Array Backend::get_vk_devices_idx() const {
+    return DeviceInfo::getInstance().get_devices_idx();
+}
+void Backend::set_device(int device_index) {
+    if (backend) {
+        ggml_backend_free(backend);
+    }
+    if (!use_cpu) {
+/*
+#ifdef SD_USE_CUBLAS
+    printlog(vformat("Using CUDA backend"));
+    backend = ggml_backend_cuda_init(0);
+#endif
+#ifdef SD_USE_METAL
+    printlog(vformat("Using Metal backend"));
+    ggml_backend_metal_log_set_callback(ggml_log_callback_default, nullptr);
+    backend = ggml_backend_metal_init();
+#endif
+#ifdef SD_USE_SYCL
+    printlog(vformat("Using SYCL backend"));
+    backend = ggml_backend_sycl_init(0);
+#endif
+#ifdef SD_USE_VULKAN
+*/
+    printlog(vformat("Using Vulkan"));
+    Array vk_devices_idx = get_vk_devices();
+    if (!vk_devices_idx.is_empty()) {
+        size_t set_device = vk_devices_idx[0];
+        if (device_index >= 0 && vk_devices_idx.has(device_index)) {
+            set_device = device_index;
+        } 
+        backend = ggml_backend_vk_init(set_device);
+        printlog(vformat("Using Vulkan device : %d", set_device));
+    }
+    if (!backend) {
+        WARN_PRINT(vformat("Failed to initialize Vulkan backend"));
+    }
+/*
+#endif
+*/
+    }
+    if (!backend || use_cpu) {
+        WARN_PRINT(vformat("Using CPU backend"));
+        backend = ggml_backend_cpu_init();
+    }
+}
+
+
+void SDModel::_bind_methods() {
+
+    ADD_SIGNAL(MethodInfo("sdmod_info", PropertyInfo(Variant::STRING, "info")));
+    ClassDB::bind_method(D_METHOD("_on_sdmod_info", "info"), &SD::_on_sdmod_info);
+
+	ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
+    ClassDB::bind_method(D_METHOD("get_backend"), &SDModel::get_backend);
+    ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
+
+    ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
+    ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "backend_res", PROPERTY_HINT_RESOURCE_TYPE, "Backend"), "", "get_backend");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "SDVersion", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell, VERSION_COUNT", PROPERTY_USAGE_READ_ONLY),"","get_version");
+    
+    BIND_ENUM_CONSTANT(VERSION_SD1);
+    BIND_ENUM_CONSTANT(VERSION_SD2);
+	BIND_ENUM_CONSTANT(VERSION_SDXL);
+    BIND_ENUM_CONSTANT(VERSION_SVD);
+    BIND_ENUM_CONSTANT(VERSION_SD3_2B);
+    BIND_ENUM_CONSTANT(VERSION_FLUX_DEV);
+    BIND_ENUM_CONSTANT(VERSION_FLUX_SCHNELL);
+    BIND_ENUM_CONSTANT(VERSION_COUNT);
+}
