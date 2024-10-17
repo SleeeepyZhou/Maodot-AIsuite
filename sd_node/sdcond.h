@@ -10,21 +10,25 @@ class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
 
 private:
-    int clip_skip = -1;
+    SDCondition cond;
+    SDCondition uncond;
 
 protected:
 	static void _bind_methods();
 
 public:
-    SDCond();
+    SDCond(SDCondition cond, SDCondition uncond);
     ~SDCond();
+
+    SDCondition get_cond() const;
+    SDCondition get_uncond() const;
 };
 
 class SDControl : public StableDiffusion {
 	GDCLASS(SDControl, StableDiffusion);
 
 private:
-    CLIP clip_res;
+    SDCond sdcond;
 
 protected:
     static void _bind_methods();
@@ -32,7 +36,7 @@ protected:
 public:
     SDControl();
     ~SDControl();
-    SDCond text_encoders(CLIP clip_res, String prompt, int clip_skip = -1);
+    SDCond text_encoders(SDModel model, String prompt, int clip_skip = -1);
 }
 
 #endif // COND_H

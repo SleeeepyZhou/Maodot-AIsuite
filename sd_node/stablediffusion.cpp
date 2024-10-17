@@ -8,11 +8,12 @@
 #include "ggml_extend.hpp"
 
 /* StableDiffusion */
+#include "conditioner.hpp"
 
 /* Module header */
 #include "stablediffusion.h"
 
-#include "modelloader.h"
+#include "sdmodel.h"
 #include "sdcond.h"
 #include "vae_node.h"
 #include "ksampler.h"
@@ -74,11 +75,18 @@ Control
 
 */
 
-
 // SDCond
-SDCond::SDCond() {
+SDCond::SDCond(SDCondition cond, SDCondition uncond):
+                cond(cond), uncond(uncond) {
 }
 SDCond::~SDCond() {
+}
+
+SDCondition SDCond::get_cond() const {
+	return cond;
+}
+SDCondition SDCond::get_uncond() const {
+	return uncond;
 }
 
 void SDCond::_bind_methods() {
@@ -91,101 +99,60 @@ SDControl::SDControl() {
 SDControl::~SDControl() {
 }
 
-SDCond SDControl::text_encoders(CLIP clip_res, String prompt, int clip_skip) {
+void SDControl::text_encoders(SDModel model_node, Latent latent , String prompt, String negative_prompt, int clip_skip) {
     // Get condition
+    Ref<StableDiffusionGGML> sd = model_node.sd;
+    if (!sd.is_valid()) {
+        ERR_PRINT(vformat("No model is loaded."));
+        return;
+    }
+    Array latent_info = latent.get_latent_info();
+    int width;
+    int height;
+    if (!latent_info[0]) { 
+        ERR_PRINT(vformat("No latent."));
+        return;
+    } else {
+        width = latent_info[1];
+        height = latent_info[2];
+    }
+    struct ggml_context* work_ctx = latent.get_work_ctx();
     int64_t t0 = ggml_time_ms();
-    std::shared_ptr<Conditioner> cond_stage_model = clip_res.get_cond_stage_model();
-    SDCondition cond = cond_stage_model->get_learned_condition(work_ctx,
+    SDCondition cond = sd->cond_stage_model->get_learned_condition(work_ctx,
                                                             n_threads,
                                                             prompt,
                                                             clip_skip,
                                                             width,
                                                             height,
-                                                            sd_ctx->sd->diffusion_model->get_adm_in_channels());
-
-    SDCondition uncond;
+                                                            sd->diffusion_model->get_adm_in_channels());
     bool force_zero_embeddings = false;
-    if (sd_ctx->sd->version == VERSION_SDXL && negative_prompt.size() == 0) {
+    if (sd->version == VERSION_SDXL && negative_prompt.is_empty()) {
         force_zero_embeddings = true;
     }
-    uncond = sd_ctx->sd->cond_stage_model->get_learned_condition(work_ctx,
+    SDCondition uncond = sd->cond_stage_model->get_learned_condition(work_ctx,
                                                                 n_threads,
                                                                 negative_prompt,
                                                                 clip_skip,
                                                                 width,
                                                                 height,
-                                                                sd_ctx->sd->diffusion_model->get_adm_in_channels(),
+                                                                sd->diffusion_model->get_adm_in_channels(),
                                                                 force_zero_embeddings);
-
     int64_t t1 = ggml_time_ms();
-    LOG_INFO("get_learned_condition completed, taking %" PRId64 " ms", t1 - t0);
-	return SDCond();
+    printlog(vformat("Get learned condition completed, taking %" PRId64 " ms", t1 - t0));
+    SDCond condition = new SDCond(cond,uncond);
+    sdcond = condition;
+	emit_signal(SNAME("encode_log"), condition);
 }
 
 void SDControl::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("text_encoders","model_node","latent","prompt","negative_prompt","clip_skip"), &SDControl::text_encoders);
+
+    ADD_SIGNAL(MethodInfo("encode_log", PropertyInfo(Variant::OBJECT, "sdcond_res")));
 }
 
 
-//// ksampler
+//// Latent
 
-/*
-
-Node
-KSampler
-        latent
-    in  context
-        sdmodel
-
-    out latent
-
-*/
-
-// KSampler
-KSampler::KSampler() {
-}
-KSampler::~KSampler() {
-}
-
-void KSampler::set_modelloader(const NodePath &p_node_a) {
-	if (a == p_node_a) {
-		return;
-	}
-/*
-	if (is_configured()) {
-		_disconnect_signals();
-	}
-
-	a = p_node_a;
-	if (Engine::get_singleton()->is_editor_hint()) {
-		// When in editor, the setter may be called as a result of node rename.
-		// It happens before the node actually changes its name, which triggers false warning.
-		callable_mp(this, &Joint2D::_update_joint).call_deferred(false);
-	} else {
-		_update_joint();
-	}
-*/
-}
-NodePath KSampler::get_modelloader() const {
-	return modelloader;
-}
-
-void KSampler::sample(Latent init_latent) {
-}
-
-void KSampler::_bind_methods() {
-}
-
-
-//// latent
-
-/*
-
-Res
-latent
-
-*/
-
-// Latent
 Latent::Latent() {
 }
 Latent::~Latent() {
@@ -220,8 +187,8 @@ Array Latent::get_latent_info() const {
         info.push_back("");
     } else {
         info.push_back(true);
-        info.push_back(latent_height);
         info.push_back(latent_width);
+        info.push_back(latent_height);
         info.push_back(latent_batch_count);
         info.push_back(vformat("%.2fMB", work_mem));
     }
@@ -269,7 +236,6 @@ void Latent::create_latent(SDVersion version) {
         emit_signal(SNAME("latent_log"), result);
         return;
     }
-    printlog(vformat("Work context memory size = %.2fMB", params.mem_size / 1024.0 / 1024.0));
     latent_height = height;
     latent_width = width;
     latent_batch_count = batch_count;
@@ -292,9 +258,9 @@ void Latent::create_latent(SDVersion version) {
     } else {
         ggml_set_f32(latent, 0.f);
     }
-    printlog(vformat("Latent created"))
+    printlog(vformat("Latent created"));
     result.push_back(true);
-    result.push_back(vformat("Latent created"));
+    result.push_back(vformat("Latent created. Work context memory size = %.2fMB", work_mem));
     emit_signal(SNAME("latent_log"), result);
 }
 

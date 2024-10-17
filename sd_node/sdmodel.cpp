@@ -647,8 +647,6 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
                                         sample_method_t method, const std::vector<float> &sigmas, 
                                         int start_merge_step, SDCondition id_cond) {
         size_t steps = sigmas.size() - 1;
-        // noise = load_tensor_from_file(work_ctx, "./rand0.bin");
-        // print_ggml_tensor(noise);
         struct ggml_tensor* x = ggml_dup_tensor(work_ctx, init_latent);
         copy_ggml_tensor(x, init_latent);
         x = denoiser->noise_scaling(sigmas[0], noise, x);
@@ -971,6 +969,7 @@ void SDModel::load_model(String str_model_path, int device_index, Scheduler sche
     if (!sd->load_from_file(str_model_path, GGML_TYPE_COUNT, 
                             clip_on_cpu, "","",false,"","","","",
                             schedule,vae_on_cpu,false,"","",false)) {
+        sd = nullptr;
         result.push_back(false);
         result.push_back(vformat("Failed to load model."));
         emit_signal(SNAME("load_log"), result);
@@ -984,6 +983,14 @@ void SDModel::load_model(String str_model_path, int device_index, Scheduler sche
     emit_signal(SNAME("load_log"), result);
 }
 
+/* Inference */
+void SDModel::ksample(Latent init_latent, SDCond cond, int steps, float CFG, float denoise, SamplerName sampler_name, int seed) {
+    if (seed < 0) {
+        srand((int)time(NULL));
+        seed = rand();
+    }
+
+}
 
 void SDModel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_vk_devices_idx"), &SDModel::get_vk_devices_idx);

@@ -7,7 +7,7 @@
 #include "ggml_extend.hpp"
 
 /* Latent */
-class Latent : public SDStableDiffusion {
+class Latent : public StableDiffusion {
 	GDCLASS(Latent, StableDiffusion);
 
 private:
@@ -40,6 +40,7 @@ public:
 
     struct ggml_context* get_work_ctx() const;
     struct ggml_tensor* get_latent() const;
+
     void free_work_ctx();
 };
 

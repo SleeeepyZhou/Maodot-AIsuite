@@ -1,8 +1,8 @@
 /*    ModelLoader for Maodot    */
 /*       By SleeeepyZhou        */
 
-#ifndef SD_MODEL_HPP
-#define SD_MODEL_HPP
+#ifndef SD_MODEL_H
+#define SD_MODEL_H
 
 #include "ggml_extend.hpp"
 
@@ -33,6 +33,19 @@ enum Scheduler {
 	AYS,
 	GITS,
 	N_SCHEDULES
+};
+enum SamplerName {
+    EULER_A,
+    EULER,
+    HEUN,
+    DPM2,
+    DPMPP2S_A,
+    DPMPP2M,
+    DPMPP2Mv2,
+    IPNDM,
+    IPNDM_V,
+    LCM,
+    N_SAMPLE_METHODS
 };
 
 /* StableDiffusionGGML */
@@ -168,7 +181,17 @@ private:
 		"SD3 2B",
 		"Flux Dev",
 		"Flux Schnell"};
-
+    const char* sampling_methods_str[] = {
+        "Euler A",
+        "Euler",
+        "Heun",
+        "DPM2",
+        "DPM++ (2s)",
+        "DPM++ (2M)",
+        "modified DPM++ (2M)",
+        "iPNDM",
+        "iPNDM_v",
+        "LCM"};
 	SDVersion version;
 	String model_path;
     Scheduler schedule;
@@ -185,6 +208,7 @@ public:
     /* Helper */
 	Array get_vk_devices_idx() const;
 	ggml_backend_t set_device(int device_index = -1, bool use_cpu = false);
+
     String get_model_path() const;
 	SDVersion get_version() const;
     Scheduler get_schedule() const;
@@ -193,7 +217,14 @@ public:
 	void load_model(String str_model_path, int device_index = -1, Scheduler schedule = DEFAULT,
                     bool use_cpu = false, bool vae_on_cpu = false, bool clip_on_cpu = false);
 
+    /* Inference */
+    void ksample(Latent init_latent, SDCond cond,
+                 int steps = 10,
+                 float CFG = 8.0f,
+                 float denoise = 1.0f,
+                 SamplerName sampler_name = LCM,
+                 int seed = 42);
 };
 
 
-#endif // SD_MODEL_HPP
+#endif // SD_MODEL_H
