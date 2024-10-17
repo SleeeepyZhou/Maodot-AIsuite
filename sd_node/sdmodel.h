@@ -113,10 +113,10 @@ public:
     bool load_from_file(String str_model_path,
                         ggml_type wtype,
 
-                        bool clip_on_cpu,String str_clip_l_path,String str_t5xxl_path,
-                        bool control_net_cpu,String str_control_net_path,String str_embeddings_path,
-                        String str_diffusion_model_path,String str_id_embeddings_path,schedule_t schedule,
-                        bool vae_on_cpu,bool vae_only_decode,String str_vae_path,String str_taesd_path,
+                        bool clip_on_cpu, String str_clip_l_path, String str_t5xxl_path,
+                        bool control_net_cpu, String str_control_net_path, String str_embeddings_path,
+                        String str_diffusion_model_path, String str_id_embeddings_path, Scheduler schedule,
+                        bool vae_on_cpu, bool vae_only_decode, String str_vae_path, String str_taesd_path,
 
                         bool vae_tiling_);
     void apply_lora(const std::string& lora_name, float multiplier);
@@ -160,8 +160,18 @@ public:
 class SDModel : public StableDiffusion {
 	GDCLASS(SDModel, StableDiffusion);
 private:
+    const char* model_version_to_str[] = {
+		"SD 1.x",
+		"SD 2.x",
+		"SDXL",
+		"SVD",
+		"SD3 2B",
+		"Flux Dev",
+		"Flux Schnell"};
+
 	SDVersion version;
 	String model_path;
+    Scheduler schedule;
 
 protected:
 	static void _bind_methods();
@@ -172,18 +182,17 @@ public:
     SDModel();
 	~SDModel();
 
-    bool load_model(int device_index);
-
-    void _on_sdmod_info(String info);
-
-	void set_model_path(String p_path);
-	String get_model_path() const;
-	void set_backend(Backend p_backen);
-	Backend get_backend() const;
-	void set_version(SDVersion p_version);
+    /* Helper */
+	Array get_vk_devices_idx() const;
+	ggml_backend_t set_device(int device_index = -1, bool use_cpu = false);
+    String get_model_path() const;
 	SDVersion get_version() const;
-	void set_wtype(ggml_type p_wtype);
-	ggml_type get_wtype() const;
+    Scheduler get_schedule() const;
+
+	/* Model */
+	void load_model(String str_model_path, int device_index = -1, Scheduler schedule = DEFAULT,
+                    bool use_cpu = false, bool vae_on_cpu = false, bool clip_on_cpu = false);
+
 };
 
 

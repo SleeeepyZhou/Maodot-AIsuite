@@ -189,9 +189,7 @@ latent
 Latent::Latent() {
 }
 Latent::~Latent() {
-    if (work_ctx) {
-        ggml_free(work_ctx)
-    }
+    free_work_ctx()
 }
 
 void Latent::set_width(const int &p_width) {
@@ -206,6 +204,29 @@ void Latent::set_height(const int &p_height) {
 int Latent::get_height() const {
 	return height;
 }
+void Latent::set_batch_count(const int &p_count) {
+    batch_count = p_count;
+}
+int Latent::get_batch_count() const {
+	return batch_count;
+}
+Array Latent::get_latent_info() const {
+    Array info;
+    if (latent == NULL) {
+        info.push_back(false);
+        info.push_back(0);
+        info.push_back(0);
+        info.push_back(-1);
+        info.push_back("");
+    } else {
+        info.push_back(true);
+        info.push_back(latent_height);
+        info.push_back(latent_width);
+        info.push_back(latent_batch_count);
+        info.push_back(vformat("%.2fMB", work_mem));
+    }
+    return info;
+}
 
 struct ggml_context *Latent::get_work_ctx() const {
 	return work_ctx;
@@ -214,7 +235,19 @@ struct ggml_tensor *Latent::get_latent() const {
 	return latent;
 }
 
-bool Latent::create_latent(SDVersion version) {
+void Latent::free_work_ctx() {
+    if (work_ctx) {
+        ggml_free(work_ctx);
+        work_ctx = NULL;
+        latent = NULL;
+    }
+}
+
+void Latent::create_latent(SDVersion version) {
+    Array result;
+    if (latent) {free_work_ctx()}
+
+    /* Context create */
     struct ggml_init_params params;
     params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
     if (version == VERSION_SD3_2B) {
@@ -228,15 +261,21 @@ bool Latent::create_latent(SDVersion version) {
     params.mem_buffer = NULL;
     params.no_alloc   = false;
     // LOG_DEBUG("mem_size %u ", params.mem_size);
-
     work_ctx = ggml_init(params);
     if (!work_ctx) {
         ERR_PRINT(vformat("Context create failed"));
-        return false;
+        result.push_back(false);
+        result.push_back(vformat("Context create failed"));
+        emit_signal(SNAME("latent_log"), result);
+        return;
     }
+    printlog(vformat("Work context memory size = %.2fMB", params.mem_size / 1024.0 / 1024.0));
+    latent_height = height;
+    latent_width = width;
+    latent_batch_count = batch_count;
+    work_mem = params.mem_size / 1024.0 / 1024.0;
 
-    printlog(vformat("Work context memory size = %.2fMB", params.mem_size / 1024.0 / 1024.0))
-
+    /* Latent create */
     int C = 4;
     if (version == VERSION_SD3_2B) {
         C = 16;
@@ -254,7 +293,9 @@ bool Latent::create_latent(SDVersion version) {
         ggml_set_f32(latent, 0.f);
     }
     printlog(vformat("Latent created"))
-    return true
+    result.push_back(true);
+    result.push_back(vformat("Latent created"));
+    emit_signal(SNAME("latent_log"), result);
 }
 
 void Latent::_bind_methods() {
@@ -262,10 +303,17 @@ void Latent::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_width"), &Latent::get_width);
     ClassDB::bind_method(D_METHOD("set_height", "height"), &Latent::set_height);
     ClassDB::bind_method(D_METHOD("get_height"), &Latent::get_height);
+    ClassDB::bind_method(D_METHOD("set_batch_count", "batch_count"), &Latent::set_batch_count);
+    ClassDB::bind_method(D_METHOD("get_batch_count"), &Latent::get_batch_count);
+    ClassDB::bind_method(D_METHOD("get_latent_info"), &Latent::get_latent_info);
+
     ClassDB::bind_method(D_METHOD("create_latent", "sd_version"), &Latent::create_latent);
+
+    ADD_SIGNAL(MethodInfo("latent_log", PropertyInfo(Variant::ARRAY, "latent_info")));
 
     ADD_PROPERTY(PropertyInfo(Variant::INT, "width", PROPERTY_HINT_RANGE, "32,4096"),"set_width","get_width");
     ADD_PROPERTY(PropertyInfo(Variant::INT, "height", PROPERTY_HINT_RANGE, "32,4096"),"set_height","get_height");
+    ADD_PROPERTY(PropertyInfo(Variant::INT, "batch_count", PROPERTY_HINT_RANGE, "1,50"),"set_batch_count","get_batch_count");
 
 }
 

@@ -95,11 +95,22 @@ void StableDiffusionGGML::calculate_alphas_cumprod(float *alphas_cumprod, float 
     }
 
 /* Model */
-bool StableDiffusionGGML::load_from_file(String str_model_path, ggml_type wtype, 
-                bool clip_on_cpu, String str_clip_l_path, String str_t5xxl_path, 
-                bool control_net_cpu, String str_control_net_path, String str_embeddings_path, 
-                String str_diffusion_model_path, String str_id_embeddings_path, schedule_t schedule, 
-                bool vae_on_cpu, bool vae_only_decode, String str_vae_path, String str_taesd_path, bool vae_tiling_) {
+bool StableDiffusionGGML::load_from_file(String str_model_path, 
+                                        ggml_type wtype, 
+                                        bool clip_on_cpu, 
+                                        String str_clip_l_path, 
+                                        String str_t5xxl_path, 
+                                        bool control_net_cpu, 
+                                        String str_control_net_path, 
+                                        String str_embeddings_path, 
+                                        String str_diffusion_model_path, 
+                                        String str_id_embeddings_path, 
+                                        Scheduler schedule, 
+                                        bool vae_on_cpu, 
+                                        bool vae_only_decode, 
+                                        String str_vae_path, 
+                                        String str_taesd_path, 
+                                        bool vae_tiling_) {
         /*        Function      */
         bool loadclip      = !str_clip_l_path.is_empty();
         bool loaddiffusion = !str_model_path.is_empty() || !str_diffusion_model_path.is_empty();
@@ -195,7 +206,7 @@ bool StableDiffusionGGML::load_from_file(String str_model_path, ggml_type wtype,
             }
             printlog(vformat("Version: %s ", model_version_to_str[version]));
         } else if (version == VERSION_COUNT) {
-            WARN_PRINT(vformat("It looks like there no diffusion model."))
+            ERR_PRINT(vformat("It looks like there no diffusion model."))
         }
         bool use_t5xxl = false;
         if (version == VERSION_SD3_2B || version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
@@ -209,7 +220,7 @@ bool StableDiffusionGGML::load_from_file(String str_model_path, ggml_type wtype,
                 model_wtype = model_loader.get_sd_wtype();
                 if (model_wtype == GGML_TYPE_COUNT) {
                     model_wtype = GGML_TYPE_F32;
-                    ERR_PRINT(vformat("Can not get mode wtype frome weight, use f32"));
+                    ERR_PRINT(vformat("Can not get mode wtype from weight, use f32"));
                 }
             }
             if (!str_model_path.is_empty() || loadclip) {
@@ -877,41 +888,12 @@ SDModel::SDModel() {
 SDModel::~SDModel() {
 }
 
-bool SDModel::load() {
-    sd = new StableDiffusionGGML(n_threads, 
-                                STD_DEFAULT_RNG, 
-                                backend,
-                                this, "printlog");
-	return false;
-}
-
-void SDModel::set_model_path(String p_path) {
-    model_path = p_path;
-}
-String SDModel::get_model_path() const {
-	return model_path;
-}
-void SDModel::set_backend(Backend p_backen) {
-    backend_res = p_backen;
-}
-Backend SDModel::get_backend() const {
-	return backend_res;
-}
-void SDModel::set_version(SDVersion p_version) {
-    version = p_version;
-}
-SDVersion SDModel::get_version() const {
-	return version;
-}
-
-
-Array Backend::get_vk_devices_idx() const {
+/* Helper */
+Array SDModel::get_vk_devices_idx() const {
     return DeviceInfo::getInstance().get_devices_idx();
 }
-void Backend::set_device(int device_index) {
-    if (backend) {
-        ggml_backend_free(backend);
-    }
+ggml_backend_t SDModel::set_device(int device_index, bool use_cpu) {
+    ggml_backend_t backend;
     if (!use_cpu) {
 /*
 #ifdef SD_USE_CUBLAS
@@ -930,7 +912,7 @@ void Backend::set_device(int device_index) {
 #ifdef SD_USE_VULKAN
 */
     printlog(vformat("Using Vulkan"));
-    Array vk_devices_idx = get_vk_devices();
+    Array vk_devices_idx = get_vk_devices_idx();
     if (!vk_devices_idx.is_empty()) {
         size_t set_device = vk_devices_idx[0];
         if (device_index >= 0 && vk_devices_idx.has(device_index)) {
@@ -950,21 +932,80 @@ void Backend::set_device(int device_index) {
         WARN_PRINT(vformat("Using CPU backend"));
         backend = ggml_backend_cpu_init();
     }
+    return backend;
 }
 
+String SDModel::get_model_path() const {
+	return model_path;
+}
+SDVersion SDModel::get_version() const {
+	return version;
+}
+Scheduler SDModel::get_schedule() const {
+	return schedule;
+}
+
+/* Model */
+void SDModel::load_model(String str_model_path, int device_index, Scheduler schedule, 
+                        bool use_cpu, bool vae_on_cpu, bool clip_on_cpu) {
+    Array result;
+    if (sd != nullptr) {sd = nullptr;}
+    ggml_backend_t backend = set_device(device_index, use_cpu);
+    if (!backend) {
+        result.push_back(false);
+        result.push_back(vformat("Failed to initialize backend."));
+        emit_signal(SNAME("load_log"), result);
+        return;
+    }
+	sd = memnew(StableDiffusionGGML, 
+                n_threads, 
+                STD_DEFAULT_RNG, 
+                backend,
+                this, "printlog");
+    if (!sd.is_valid()) {
+        result.push_back(false);
+        result.push_back(vformat("Failed to create SD."));
+        emit_signal(SNAME("load_log"), result);
+        return;
+    }
+    if (!sd->load_from_file(str_model_path, GGML_TYPE_COUNT, 
+                            clip_on_cpu, "","",false,"","","","",
+                            schedule,vae_on_cpu,false,"","",false)) {
+        result.push_back(false);
+        result.push_back(vformat("Failed to load model."));
+        emit_signal(SNAME("load_log"), result);
+        return;
+    }
+    model_path = str_model_path;
+    version = sd->version;
+    schedule = schedule;
+    result.push_back(true);
+    result.push_back(vformat("Loading completed. Version: %s.", model_version_to_str[version]));
+    emit_signal(SNAME("load_log"), result);
+}
+
+
 void SDModel::_bind_methods() {
-
-    ADD_SIGNAL(MethodInfo("sdmod_info", PropertyInfo(Variant::STRING, "info")));
-    ClassDB::bind_method(D_METHOD("_on_sdmod_info", "info"), &SD::_on_sdmod_info);
-
+	ClassDB::bind_method(D_METHOD("get_vk_devices_idx"), &SDModel::get_vk_devices_idx);
 	ClassDB::bind_method(D_METHOD("get_model_path"), &SDModel::get_model_path);
-    ClassDB::bind_method(D_METHOD("get_backend"), &SDModel::get_backend);
     ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
 
+    ClassDB::bind_method(D_METHOD("load_model","model_path","device_index","scheduler","use_cpu","vae_on_cpu","clip_on_cpu"), &SDModel::load_model);
+
+    ADD_SIGNAL(MethodInfo("load_log", PropertyInfo(Variant::ARRAY, "load_info")));
+
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
-    ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "backend_res", PROPERTY_HINT_RESOURCE_TYPE, "Backend"), "", "get_backend");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "SDVersion", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell, VERSION_COUNT", PROPERTY_USAGE_READ_ONLY),"","get_version");
-    
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "version", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell", PROPERTY_USAGE_READ_ONLY),"","get_version");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "schedule", PROPERTY_HINT_ENUM, "default, discrete, karras, exponential, ays, gits", PROPERTY_USAGE_READ_ONLY),"","get_schedule");
+
+    BIND_ENUM_CONSTANT(DEFAULT);
+    BIND_ENUM_CONSTANT(DISCRETE);
+	BIND_ENUM_CONSTANT(KARRAS);
+    BIND_ENUM_CONSTANT(EXPONENTIAL);
+    BIND_ENUM_CONSTANT(AYS);
+    BIND_ENUM_CONSTANT(GITS);
+    BIND_ENUM_CONSTANT(N_SCHEDULES);
+
     BIND_ENUM_CONSTANT(VERSION_SD1);
     BIND_ENUM_CONSTANT(VERSION_SD2);
 	BIND_ENUM_CONSTANT(VERSION_SDXL);
