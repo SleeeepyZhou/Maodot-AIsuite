@@ -1,5 +1,4 @@
-/*    ModelLoader for Maodot    */
-/*       By SleeeepyZhou        */
+
 
 #include "ggml_extend.hpp"
 #include "model.h"
@@ -36,11 +35,6 @@ SDModelLoader
 SDModelLoader::SDModelLoader() {
 }
 SDModelLoader::~SDModelLoader() {
-}
-
-Backend SDModelLoader::create_backend(int device_index, bool use_cpu = false) {
-    Backend new_backend = new Backend(device_index, use_cpu);
-	return new_backend;
 }
 
 void SDModelLoader::_bind_methods() {

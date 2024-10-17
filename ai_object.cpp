@@ -14,11 +14,11 @@ AIObject::AIObject() {
 AIObject::~AIObject() {
 }
 
-void AIObject::printlog(String out_log) {
+void AIObject::printlog(String info) {
     if (print_log) {
-        print_line(out_log);
+        print_line(info);
     }
-    emit_signal(SNAME("sd_log"), out_log);
+    emit_signal(SNAME("sd_log"), info);
 }
 
 void AIObject::set_print_log(bool p_print_log) {
@@ -37,7 +37,9 @@ void AIObject::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_print_log"), &AIObject::is_print_log);
     ClassDB::bind_method(D_METHOD("get_sys_physical_cores"), &AIObject::get_sys_physical_cores);
 
+    ClassDB::bind_method(D_METHOD("printlog", "info"), &AIObject::printlog);
+
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_log"), "set_print_log", "is_print_log");
 
-    ADD_SIGNAL(MethodInfo("sd_log", PropertyInfo(Variant::STRING, "SD_log")));
+    ADD_SIGNAL(MethodInfo("sd_log", PropertyInfo(Variant::STRING, "info")));
 }

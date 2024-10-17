@@ -21,11 +21,11 @@
 StableDiffusionGGML::StableDiffusionGGML(int n_threads, 
                                         rng_type_t rng_type, 
                                         ggml_backend_t backend,
-                                        Object *receiver, const StringName &method): 
+                                        SDModel *receiver, const StringName &method): 
                                         n_threads(n_threads),
                                         backend(backend),
-                                        callback_receiver(receiver),
-                                        callback_method(method) {
+                                        receiver(receiver),
+                                        method(method) {
         if (rng_type == STD_DEFAULT_RNG) {
             rng = std::make_shared<STDDefaultRNG>();
         } else if (rng_type == CUDA_RNG) {
@@ -47,10 +47,9 @@ StableDiffusionGGML::~StableDiffusionGGML() {
 
 /* Helper */
 void StableDiffusionGGML::printlog(String out_log) {
-    if (print_log) {
-        print_line(out_log);
+    if (receiver) {
+        receiver->call(method, out_log);
     }
-    emit_signal(SNAME("sdmodel_log"), out_log);
 }
 
 bool StableDiffusionGGML::is_using_v_parameterization_for_sd2(ggml_context* work_ctx) {
@@ -869,8 +868,6 @@ ggml_tensor *StableDiffusionGGML::decode_first_stage(ggml_context *work_ctx, ggm
     }
 
 void StableDiffusionGGML::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("some_function_stage_1"), &SDMod::some_function_stage_1);
-    ClassDB::bind_method(D_METHOD("some_function_stage_2"), &SDMod::some_function_stage_2);
 }
 
 
@@ -880,12 +877,12 @@ SDModel::SDModel() {
 SDModel::~SDModel() {
 }
 
-void SDModel::free_sd_ctx(sd_ctx_t* sd_ctx) {
-    if (sd_ctx->sd != NULL) {
-        delete sd_ctx->sd;
-        sd_ctx->sd = NULL;
-    }
-    free(sd_ctx);
+bool SDModel::load() {
+    sd = new StableDiffusionGGML(n_threads, 
+                                STD_DEFAULT_RNG, 
+                                backend,
+                                this, "printlog");
+	return false;
 }
 
 void SDModel::set_model_path(String p_path) {
@@ -905,12 +902,6 @@ void SDModel::set_version(SDVersion p_version) {
 }
 SDVersion SDModel::get_version() const {
 	return version;
-}
-void SDModel::set_wtype(ggml_type p_wtype){
-	wtype = p_wtype
-}
-ggml_type SDModel::get_wtype() const {
-	return wtype;
 }
 
 
@@ -960,7 +951,6 @@ void Backend::set_device(int device_index) {
         backend = ggml_backend_cpu_init();
     }
 }
-
 
 void SDModel::_bind_methods() {
 

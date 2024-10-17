@@ -4,28 +4,6 @@
 #define MODEL_LOADER_H
 
 #include "stablediffusion.h"
-#include "ggml_extend.hpp"
-
-enum SDVersion {
-	VERSION_SD1,
-	VERSION_SD2,
-	VERSION_SDXL,
-	VERSION_SVD,
-	VERSION_SD3_2B,
-	VERSION_FLUX_DEV,
-	VERSION_FLUX_SCHNELL,
-	VERSION_COUNT,
-};
-
-enum Scheduler {
-	DEFAULT,
-	DISCRETE,
-	KARRAS,
-	EXPONENTIAL,
-	AYS,
-	GITS,
-	N_SCHEDULES
-};
 
 /* loader */
 class SDModelLoader : public StableDiffusion {

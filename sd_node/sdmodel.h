@@ -1,8 +1,12 @@
+/*    ModelLoader for Maodot    */
+/*       By SleeeepyZhou        */
+
 #ifndef SD_MODEL_HPP
 #define SD_MODEL_HPP
 
+#include "ggml_extend.hpp"
+
 #include "stablediffusion.h"
-#include "modelloader.h"
 
 #include "core/object/ref_counted.h"
 #include "core/object/class_db.h"
@@ -10,6 +14,25 @@
 enum rng_type_t {
     STD_DEFAULT_RNG,
     CUDA_RNG
+};
+enum SDVersion {
+	VERSION_SD1,
+	VERSION_SD2,
+	VERSION_SDXL,
+	VERSION_SVD,
+	VERSION_SD3_2B,
+	VERSION_FLUX_DEV,
+	VERSION_FLUX_SCHNELL,
+	VERSION_COUNT,
+};
+enum Scheduler {
+	DEFAULT,
+	DISCRETE,
+	KARRAS,
+	EXPONENTIAL,
+	AYS,
+	GITS,
+	N_SCHEDULES
 };
 
 /* StableDiffusionGGML */
@@ -26,8 +49,8 @@ private:
 		"Flux Dev",
 		"Flux Schnell"};
     
-    Object *callback_receiver;
-    StringName callback_method;
+    SDModel *receiver;
+    StringName method;
 
 protected:
     static void _bind_methods();
@@ -35,7 +58,6 @@ protected:
 public:
     int n_threads            = -1;
     bool free_params_immediately = false;
-    bool print_log = false;
     std::shared_ptr<RNG> rng = std::make_shared<STDDefaultRNG>();
     std::map<std::string, struct ggml_tensor*> tensors;
 
@@ -78,7 +100,7 @@ public:
 
     StableDiffusionGGML(int n_threads, rng_type_t rng_type, 
                         ggml_backend_t backend,
-                        Object *receiver, const StringName &method);
+                        SDModel *receiver, const StringName &method);
     ~StableDiffusionGGML();
 
     /* Helper */
@@ -149,6 +171,8 @@ public:
 
     SDModel();
 	~SDModel();
+
+    bool load_model(int device_index);
 
     void _on_sdmod_info(String info);
 
