@@ -99,7 +99,13 @@ SDControl::SDControl() {
 SDControl::~SDControl() {
 }
 
-void SDControl::text_encoders(SDModel model_node, Latent latent , String prompt, String negative_prompt, int clip_skip) {
+SDCond SDControl::get_cond_res() const {
+	return sdcond;
+}
+
+void SDControl::text_encoders(SDModel model_node, Latent latent , 
+                              String prompt, String negative_prompt, 
+                              int clip_skip) {
     // Get condition
     Ref<StableDiffusionGGML> sd = model_node.sd;
     if (!sd.is_valid()) {
@@ -145,6 +151,7 @@ void SDControl::text_encoders(SDModel model_node, Latent latent , String prompt,
 }
 
 void SDControl::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("get_cond_res"), &SDControl::get_cond_res);
     ClassDB::bind_method(D_METHOD("text_encoders","model_node","latent","prompt","negative_prompt","clip_skip"), &SDControl::text_encoders);
 
     ADD_SIGNAL(MethodInfo("encode_log", PropertyInfo(Variant::OBJECT, "sdcond_res")));
@@ -201,7 +208,14 @@ struct ggml_context *Latent::get_work_ctx() const {
 struct ggml_tensor *Latent::get_latent() const {
 	return latent;
 }
-
+void Latent::take_result_latent(std::vector<struct ggml_tensor*> result_latents) {
+    has_result = true;
+    final_latents = result_latents;
+    emit_signal(SNAME("result_latent"));
+}
+std::vector<struct ggml_tensor *> Latent::get_final_latents() const {
+	return final_latents;
+}
 void Latent::free_work_ctx() {
     if (work_ctx) {
         ggml_free(work_ctx);
@@ -261,6 +275,7 @@ void Latent::create_latent(SDVersion version) {
     printlog(vformat("Latent created"));
     result.push_back(true);
     result.push_back(vformat("Latent created. Work context memory size = %.2fMB", work_mem));
+    has_result = false;
     emit_signal(SNAME("latent_log"), result);
 }
 
@@ -275,6 +290,7 @@ void Latent::_bind_methods() {
 
     ClassDB::bind_method(D_METHOD("create_latent", "sd_version"), &Latent::create_latent);
 
+    ADD_SIGNAL(MethodInfo("result_latent"));
     ADD_SIGNAL(MethodInfo("latent_log", PropertyInfo(Variant::ARRAY, "latent_info")));
 
     ADD_PROPERTY(PropertyInfo(Variant::INT, "width", PROPERTY_HINT_RANGE, "32,4096"),"set_width","get_width");

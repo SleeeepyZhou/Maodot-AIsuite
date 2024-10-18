@@ -224,6 +224,9 @@ public:
                  float denoise = 1.0f,
                  SamplerName sampler_name = LCM,
                  int seed = 42);
+
+    /* VAE */
+    void decode(Latent init_latent);
 };
 
 

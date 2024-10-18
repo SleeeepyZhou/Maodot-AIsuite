@@ -1,10 +1,15 @@
+/*    ModelLoader for Maodot    */
+/*       By SleeeepyZhou        */
+
+
 #include "ggml_extend.hpp"
 
 #include "model.h"
 #include "rng.hpp"
 #include "rng_philox.hpp"
 
-#include "util.h"
+// #include "util.h"
+#include "stb_image_write.h"
 
 #include "conditioner.hpp"
 #include "control.hpp"
@@ -17,6 +22,13 @@
 #include "vae.hpp"
 
 #include "sdmodel.h"
+
+typedef struct {
+    uint32_t width;
+    uint32_t height;
+    uint32_t channel;
+    uint8_t* data;
+} sd_image_t;
 
 StableDiffusionGGML::StableDiffusionGGML(int n_threads, 
                                         rng_type_t rng_type, 
@@ -653,20 +665,20 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
 
         struct ggml_tensor* noised_input = ggml_dup_tensor(work_ctx, noise);
 
-        bool has_unconditioned = cfg_scale != 1.0 && uncond.c_crossattn != NULL;
-
         // denoise wrapper
         struct ggml_tensor* out_cond   = ggml_dup_tensor(work_ctx, x);
         struct ggml_tensor* out_uncond = NULL;
-        if (has_unconditioned) {
+        if (cfg_scale != 1.0) {
             out_uncond = ggml_dup_tensor(work_ctx, x);
         }
-        struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
 
+        struct ggml_tensor* denoised = ggml_dup_tensor(work_ctx, x);
         auto denoise = [&](ggml_tensor* input, float sigma, int step) -> ggml_tensor* {
+            /*
             if (step == 1) {
                 pretty_progress(0, (int)steps, 0);
             }
+            */
             int64_t t0 = ggml_time_us();
 
             std::vector<float> scaling = denoiser->get_scalings(sigma);
@@ -686,7 +698,6 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
             ggml_tensor_scale(noised_input, c_in);
 
             std::vector<struct ggml_tensor*> controls;
-
             if (control_hint != NULL) {
                 control_net->compute(n_threads, noised_input, control_hint, timesteps, cond.c_crossattn, cond.c_vector);
                 controls = control_net->controls;
@@ -720,10 +731,10 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
                                          control_strength,
                                          &out_cond);
             }
-
+            
+            // uncond
             float* negative_data = NULL;
-            if (has_unconditioned) {
-                // uncond
+            if (cfg_scale != 1.0) {
                 if (control_hint != NULL) {
                     control_net->compute(n_threads, noised_input, control_hint, timesteps, uncond.c_crossattn, uncond.c_vector);
                     controls = control_net->controls;
@@ -741,13 +752,14 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
                                          &out_uncond);
                 negative_data = (float*)out_uncond->data;
             }
+            
             float* vec_denoised  = (float*)denoised->data;
             float* vec_input     = (float*)input->data;
             float* positive_data = (float*)out_cond->data;
             int ne_elements      = (int)ggml_nelements(denoised);
             for (int i = 0; i < ne_elements; i++) {
                 float latent_result = positive_data[i];
-                if (has_unconditioned) {
+                if (cfg_scale != 1.0) {
                     // out_uncond + cfg_scale * (out_cond - out_uncond)
                     int64_t ne3 = out_cond->ne[3];
                     if (min_cfg != cfg_scale && ne3 != 1) {
@@ -761,11 +773,15 @@ ggml_tensor *StableDiffusionGGML::sample(ggml_context *work_ctx, ggml_tensor *in
                 // denoised = (v * c_out + input * c_skip) or (input + eps * c_out)
                 vec_denoised[i] = latent_result * c_out + vec_input[i] * c_skip;
             }
+
             int64_t t1 = ggml_time_us();
+            /*
             if (step > 0) {
                 pretty_progress(step, (int)steps, (t1 - t0) / 1000000.f);
                 // printlog(vformat("step %d sampling completed taking %.2fs", step, (t1 - t0) * 1.0f / 1000000);
             }
+            */
+
             return denoised;
         };
 
@@ -984,12 +1000,169 @@ void SDModel::load_model(String str_model_path, int device_index, Scheduler sche
 }
 
 /* Inference */
-void SDModel::ksample(Latent init_latent, SDCond cond, int steps, float CFG, float denoise, SamplerName sampler_name, int seed) {
+void SDModel::ksample(Latent init_latent, SDCond cond_res, 
+                      int steps, float CFG, float denoise, SamplerName sampler_name, 
+                      int seed) {
+    int64_t t1 = ggml_time_ms();
+    /* gdscript -> C */
+    if (!sd.is_valid()) {
+        ERR_PRINT(vformat("No model is loaded."));
+        return;
+    }
+    Array latent_info = latent.get_latent_info();
+    if (!latent_info[0]) { 
+        ERR_PRINT(vformat("No latent."));
+        return;
+    }
+    int width = latent_info[1];
+    int height = latent_info[2];
+    int batch_count = latent_info[3];
+    struct ggml_context* work_ctx = latent.get_work_ctx();
+
+    SDCondition cond = cond_res.get_cond();
+    SDCondition uncond = cond_res.get_uncond();
+
     if (seed < 0) {
         srand((int)time(NULL));
         seed = rand();
     }
+    
+    std::vector<float> sigmas = sd->denoiser->get_sigmas(steps);
+    int sample_steps = sigmas.size() - 1;
 
+    /* Sample */
+
+    // latents
+    std::vector<struct ggml_tensor*> final_latents;  // collect latents to decode
+    int C = 4;
+    if (sd->version == VERSION_SD3_2B) {
+        C = 16;
+    } else if (sd->version == VERSION_FLUX_DEV || sd->version == VERSION_FLUX_SCHNELL) {
+        C = 16;
+    }
+    int W = width / 8;
+    int H = height / 8;
+
+    // sample
+    printlog(vformat("Sampling using %s method", sampling_methods_str[sampler_name]));
+    for (int b = 0; b < batch_count; b++) {
+        int64_t sampling_start = ggml_time_ms();
+        int64_t cur_seed       = seed + b;
+        printlog(vformat("generating image: %i/%i - seed %" PRId64, b + 1, batch_count, cur_seed));
+
+        sd->rng->manual_seed(cur_seed);
+        struct ggml_tensor* x_t   = init_latent;
+        struct ggml_tensor* noise = ggml_new_tensor_4d(work_ctx, GGML_TYPE_F32, W, H, C, 1);
+        ggml_tensor_set_f32_randn(noise, sd->rng);
+
+        int start_merge_step = -1;
+        if (sd->stacked_id) {
+            start_merge_step = int(sd->pmid_model->style_strength / 100.f * sample_steps);
+            printlog(vformat("PHOTOMAKER: start_merge_step: %d", start_merge_step));
+        }
+
+        struct ggml_tensor* x_0 = sd->sample(work_ctx,
+                                            x_t,
+                                            noise,
+                                            cond,
+                                            uncond,
+                                            NULL,
+                                            0.0f,
+                                            CFG,
+                                            CFG,
+                                            0.0f,
+                                            sampler_name,
+                                            sigmas,
+                                            start_merge_step,
+                                            NULL);
+        // struct ggml_tensor* x_0 = load_tensor_from_file(ctx, "samples_ddim.bin");
+        // print_ggml_tensor(x_0);
+        int64_t sampling_end = ggml_time_ms();
+        printlog(vformat("sampling completed, taking %.2fs", (sampling_end - sampling_start) * 1.0f / 1000));
+        final_latents.push_back(x_0);
+    }
+
+    if (sd->free_params_immediately) {
+        sd->diffusion_model->free_params_buffer();
+    }
+    int64_t t2 = ggml_time_ms();
+    printlog(vformat("Generating latent completed, taking %.2fs", final_latents.size(), (t2 - t1) * 1.0f / 1000));
+    init_latent.take_result_latent(final_latents);
+}
+
+/* VAE */
+#include "core/io/image.h"
+
+void SDModel::decode(Latent init_latent) {
+    Array result;
+    if (!init_latent.has_result) {
+        ERR_PRINT(vformat("No final latents"));
+        result.push_back(false);
+        result.push_back(vformat("No final latents"));
+        emit_signal(SNAME("vae_log"), result);
+        return;
+    }
+    std::vector<struct ggml_tensor*> final_latents;
+    final_latents = init_latent.get_final_latents();
+    Array latent_info = latent.get_latent_info();
+    int width = latent_info[1];
+    int height = latent_info[2];
+    int batch_count = latent_info[3];
+    struct ggml_context* work_ctx = init_latent.get_work_ctx();
+
+    int64_t t3 = ggml_time_ms();
+    // Decode
+    printlog(vformat("decoding %zu latents", final_latents.size()));
+    std::vector<struct ggml_tensor*> decoded_images;  // collect decoded images
+    for (size_t i = 0; i < final_latents.size(); i++) {
+        int64_t t1 = ggml_time_ms();
+        struct ggml_tensor* img = sd->decode_first_stage(work_ctx, final_latents[i] /* x_0 */);
+        // print_ggml_tensor(img);
+        if (img != NULL) {
+            decoded_images.push_back(img);
+        }
+        int64_t t2 = ggml_time_ms();
+        printlog(vformat("latent decoded, taking %.2fs", i + 1, (t2 - t1) * 1.0f / 1000));
+    }
+
+    int64_t t4 = ggml_time_ms();
+    printlog(vformat("decode_first_stage completed, taking %.2fs", (t4 - t3) * 1.0f / 1000));
+    if (sd->free_params_immediately && !sd->use_tiny_autoencoder) {
+        sd->first_stage_model->free_params_buffer();
+    }
+
+    // to image
+    Array png_images;
+    bool no_error = true;
+    for (size_t i = 0; i < decoded_images.size(); i++) {
+        int len;
+        std::string parameters = "";
+        unsigned char *png = stbi_write_png_to_mem((const unsigned char *) sd_tensor_to_image(decoded_images[i]), 
+                                                0, width, height, 3, 
+                                                &len, parameters.c_str());
+        if (png == NULL) {
+            ERR_PRINT("Png write failed.");
+            no_error = false;
+            continue;
+        }
+        Ref<Image> image;
+        image.instantiate();
+        Vector<uint8_t> byte_vector;
+        byte_vector.resize(len); 
+        for (int i = 0; i < len; i++) {
+            byte_vector.write[i] = png_data[i];
+        }
+        Error err = image->load_png_from_buffer(byte_vector);
+        if (err != OK) {
+            ERR_PRINT("Failed to load PNG data into Image.");
+            no_error = false;
+            continue;
+        }
+        png_images.push_back(image);
+    }
+    result.push_back(no_error);
+    result.push_back(png_images);
+    emit_signal(SNAME("vae_log"), result);
 }
 
 void SDModel::_bind_methods() {
@@ -998,20 +1171,15 @@ void SDModel::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_version"), &SDModel::get_version);
 
     ClassDB::bind_method(D_METHOD("load_model","model_path","device_index","scheduler","use_cpu","vae_on_cpu","clip_on_cpu"), &SDModel::load_model);
+    ClassDB::bind_method(D_METHOD("ksample","init_latent","cond_res","steps","CFG","denoise","sampler_name","seed"), &SDModel::ksample);
+    ClassDB::bind_method(D_METHOD("decode","init_latent"), &SDModel::decode);
 
     ADD_SIGNAL(MethodInfo("load_log", PropertyInfo(Variant::ARRAY, "load_info")));
+    ADD_SIGNAL(MethodInfo("vae_log", PropertyInfo(Variant::ARRAY, "vae_result")));
 
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path", PROPERTY_HINT_FILE, "", PROPERTY_USAGE_READ_ONLY),"","get_model_path");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "version", PROPERTY_HINT_ENUM, "SD1.x, SD2.x, SDXL, SVD, SD3-2B, FLUX-dev, FLUX-schnell", PROPERTY_USAGE_READ_ONLY),"","get_version");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "schedule", PROPERTY_HINT_ENUM, "default, discrete, karras, exponential, ays, gits", PROPERTY_USAGE_READ_ONLY),"","get_schedule");
-
-    BIND_ENUM_CONSTANT(DEFAULT);
-    BIND_ENUM_CONSTANT(DISCRETE);
-	BIND_ENUM_CONSTANT(KARRAS);
-    BIND_ENUM_CONSTANT(EXPONENTIAL);
-    BIND_ENUM_CONSTANT(AYS);
-    BIND_ENUM_CONSTANT(GITS);
-    BIND_ENUM_CONSTANT(N_SCHEDULES);
 
     BIND_ENUM_CONSTANT(VERSION_SD1);
     BIND_ENUM_CONSTANT(VERSION_SD2);
@@ -1021,4 +1189,25 @@ void SDModel::_bind_methods() {
     BIND_ENUM_CONSTANT(VERSION_FLUX_DEV);
     BIND_ENUM_CONSTANT(VERSION_FLUX_SCHNELL);
     BIND_ENUM_CONSTANT(VERSION_COUNT);
+
+    BIND_ENUM_CONSTANT(DEFAULT);
+    BIND_ENUM_CONSTANT(DISCRETE);
+	BIND_ENUM_CONSTANT(KARRAS);
+    BIND_ENUM_CONSTANT(EXPONENTIAL);
+    BIND_ENUM_CONSTANT(AYS);
+    BIND_ENUM_CONSTANT(GITS);
+    BIND_ENUM_CONSTANT(N_SCHEDULES);
+
+
+    BIND_ENUM_CONSTANT(EULER_A);
+    BIND_ENUM_CONSTANT(EULER);
+	BIND_ENUM_CONSTANT(HEUN);
+    BIND_ENUM_CONSTANT(DPM2);
+    BIND_ENUM_CONSTANT(DPMPP2S_A);
+    BIND_ENUM_CONSTANT(DPMPP2M);
+    BIND_ENUM_CONSTANT(DPMPP2Mv2);
+    BIND_ENUM_CONSTANT(IPNDM);
+    BIND_ENUM_CONSTANT(IPNDM_V);
+    BIND_ENUM_CONSTANT(LCM);
+    BIND_ENUM_CONSTANT(N_SAMPLE_METHODS);
 }

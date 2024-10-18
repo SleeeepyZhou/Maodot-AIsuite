@@ -36,7 +36,10 @@ protected:
 public:
     SDControl();
     ~SDControl();
-    SDCond text_encoders(SDModel model, String prompt, int clip_skip = -1);
+    SDCond get_cond_res() const;
+	void text_encoders(SDModel model_node, Latent latent, 
+                       String prompt, String negative_prompt, 
+                       int clip_skip);
 }
 
 #endif // COND_H

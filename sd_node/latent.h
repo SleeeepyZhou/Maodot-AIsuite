@@ -22,6 +22,9 @@ private:
     int latent_batch_count;
     float work_mem;
 
+    std::vector<struct ggml_tensor*> final_latents;
+    bool has_result = false;
+
 protected:
 	static void _bind_methods();
 
@@ -40,6 +43,8 @@ public:
 
     struct ggml_context* get_work_ctx() const;
     struct ggml_tensor* get_latent() const;
+    void take_result_latent(std::vector<struct ggml_tensor*> result_latents);
+    std::vector<struct ggml_tensor*> get_final_latents() const;
 
     void free_work_ctx();
 };

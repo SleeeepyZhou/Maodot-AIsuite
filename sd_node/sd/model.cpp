@@ -7,15 +7,12 @@
 #include <vector>
 
 #include "model.h"
-#include "stable-diffusion.h"
 #include "util.h"
 #include "vocab.hpp"
 
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "ggml.h"
-
-#include "stable-diffusion.h"
 
 #ifdef SD_USE_METAL
 #include "ggml-metal.h"
