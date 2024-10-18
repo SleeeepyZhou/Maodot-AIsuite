@@ -23,7 +23,7 @@
 #endif
 
 #include "ggml.h"
-#include "stable-diffusion.h"
+#include "stablediffusion.h"
 
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb_image_resize.h"

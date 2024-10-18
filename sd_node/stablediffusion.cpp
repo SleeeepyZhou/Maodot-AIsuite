@@ -15,7 +15,6 @@
 
 #include "sdmodel.h"
 #include "sdcond.h"
-#include "vae_node.h"
 #include "ksampler.h"
 #include "latent.h"
 
@@ -300,9 +299,10 @@ void Latent::_bind_methods() {
 }
 
 
+/*
 //// vae
 
-/*
+
 
 Node
 VAE
@@ -311,7 +311,7 @@ VAE
         latent  /   image
     out image   /   latent
 
-*/
+
 
 // VAE
 VAE::VAE() {
@@ -431,3 +431,4 @@ ggml_tensor* VAE::decode_first_stage(Latent latent) {
 void VAE::_bind_methods() {
 
 }
+*/
