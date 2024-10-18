@@ -9,7 +9,6 @@
 
 #include "sdmodel.h"
 #include "sdcond.h"
-#include "ksampler.h"
 #include "latent.h"
 
 void initialize_ai_suite_module(ModuleInitializationLevel p_level) {
@@ -28,7 +27,7 @@ void initialize_ai_suite_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_ABSTRACT_CLASS(AIResource);
 	GDREGISTER_ABSTRACT_CLASS(SDResource);
-	GDREGISTER_ABSTRACT_CLASS(StableDiffusionGGML);
+	GDREGISTER_ABSTRACT_CLASS(SDGGML);
 
 }
 

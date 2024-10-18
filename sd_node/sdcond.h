@@ -4,7 +4,10 @@
 #define COND_H
 
 #include "stablediffusion.h"
-#include "modelloader.h"
+#include "sdmodel.h"
+
+class SDResource;
+class StableDiffusion;
 
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
@@ -28,7 +31,7 @@ class SDControl : public StableDiffusion {
 	GDCLASS(SDControl, StableDiffusion);
 
 private:
-    SDCond sdcond;
+    SDCond sdcond = nullptr;
 
 protected:
     static void _bind_methods();

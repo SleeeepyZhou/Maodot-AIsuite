@@ -469,7 +469,7 @@ struct FluxFlowDenoiser : public Denoiser {
 typedef std::function<ggml_tensor*(ggml_tensor*, float, int)> denoise_cb_t;
 
 // k diffusion reverse ODE: dx = (x - D(x;\sigma)) / \sigma dt; \sigma(t) = t
-static void sample_k_diffusion(sample_method_t method,
+static void sample_k_diffusion(Scheduler method,
                                denoise_cb_t model,
                                ggml_context* work_ctx,
                                ggml_tensor* x,

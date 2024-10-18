@@ -17,17 +17,6 @@
 
 #define SD_MAX_DIMS 5
 
-enum SDVersion {
-    VERSION_SD1,
-    VERSION_SD2,
-    VERSION_SDXL,
-    VERSION_SVD,
-    VERSION_SD3_2B,
-    VERSION_FLUX_DEV,
-    VERSION_FLUX_SCHNELL,
-    VERSION_COUNT,
-};
-
 struct TensorStorage {
     std::string name;
     ggml_type type          = GGML_TYPE_F32;

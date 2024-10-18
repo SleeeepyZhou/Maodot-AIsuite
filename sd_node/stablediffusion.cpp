@@ -15,7 +15,6 @@
 
 #include "sdmodel.h"
 #include "sdcond.h"
-#include "ksampler.h"
 #include "latent.h"
 
 
@@ -106,7 +105,7 @@ void SDControl::text_encoders(SDModel model_node, Latent latent ,
                               String prompt, String negative_prompt, 
                               int clip_skip) {
     // Get condition
-    Ref<StableDiffusionGGML> sd = model_node.sd;
+    Ref<SDGGML> sd = model_node.sd;
     if (!sd.is_valid()) {
         ERR_PRINT(vformat("No model is loaded."));
         return;

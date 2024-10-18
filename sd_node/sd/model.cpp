@@ -14,6 +14,8 @@
 #include "ggml-backend.h"
 #include "ggml.h"
 
+#include "stablediffusion.h"
+
 #ifdef SD_USE_METAL
 #include "ggml-metal.h"
 #endif

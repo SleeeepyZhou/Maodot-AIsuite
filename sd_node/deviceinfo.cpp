@@ -1,19 +1,23 @@
 /*       By SleeeepyZhou        */
 
-#include "deviceinfo.h"
 
-#include "ggml-kompute.h"
+#include "deviceinfo.h"
 #include "util.h"
+#include "ggml-vulkan.h"
 
 DeviceInfo::DeviceInfo() {
     physical_Core = get_num_physical_cores();
     get_vk_available_devices();
 }
 
-DeviceInfo::get_vk_available_devices() {
-    size_t device_count = 0;
-    ggml_vk_device *devices = ggml_vk_available_devices(1024 * 1024 * 1024, &device_count); 
-    if (devices != nullptr) {
+void DeviceInfo::get_vk_available_devices() {
+    int device_count = ggml_backend_vk_get_device_count();
+    if (device_count > 1) {
+        vk_available_devices.push_back(1);
+        vk_available_devices.push_back(0);
+        vk_devices_idx.push_back(1);
+        vk_devices_idx.push_back(0);
+        /*
         for (size_t i = 0; i < device_count; ++i) {
             Dictionary vk_device;
             vk_device["index"] = devices[i].index;
@@ -27,8 +31,11 @@ DeviceInfo::get_vk_available_devices() {
             vk_available_devices.push_back(vk_device);
             vk_devices_idx.push_back(devices[i].index);
         }
-        free(devices);
+        */
+    } else if (device_count = 1){
+        vk_devices_idx.push_back(0);
+        vk_available_devices.push_back(0);
     } else {
-        ERR_PRINT(vformat("No Vulkan devices available or insufficient memory."));
+        ERR_PRINT(vformat("No Vulkan devices available."));
     }
 }

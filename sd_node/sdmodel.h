@@ -5,63 +5,37 @@
 #define SD_MODEL_H
 
 #include "ggml_extend.hpp"
+#include "model.h"
+#include "rng.hpp"
+#include "rng_philox.hpp"
+
+#include "util.h"
+#include "stb_image_write.h"
+
+#include "conditioner.hpp"
+#include "control.hpp"
+#include "denoiser.hpp"
+#include "diffusion_model.hpp"
+#include "esrgan.hpp"
+#include "lora.hpp"
+#include "pmid.hpp"
+#include "tae.hpp"
+#include "vae.hpp"
 
 #include "stablediffusion.h"
 
 #include "core/object/ref_counted.h"
 #include "core/object/class_db.h"
 
-enum rng_type_t {
-    STD_DEFAULT_RNG,
-    CUDA_RNG
-};
-enum SDVersion {
-	VERSION_SD1,
-	VERSION_SD2,
-	VERSION_SDXL,
-	VERSION_SVD,
-	VERSION_SD3_2B,
-	VERSION_FLUX_DEV,
-	VERSION_FLUX_SCHNELL,
-	VERSION_COUNT,
-};
-enum Scheduler {
-	DEFAULT,
-	DISCRETE,
-	KARRAS,
-	EXPONENTIAL,
-	AYS,
-	GITS,
-	N_SCHEDULES
-};
-enum SamplerName {
-    EULER_A,
-    EULER,
-    HEUN,
-    DPM2,
-    DPMPP2S_A,
-    DPMPP2M,
-    DPMPP2Mv2,
-    IPNDM,
-    IPNDM_V,
-    LCM,
-    N_SAMPLE_METHODS
-};
+class SDModel;
+class Latent;
+class SDCond;
 
-/* StableDiffusionGGML */
-class StableDiffusionGGML : public RefCounted {
-    GDCLASS(SDMod, RefCounted);
+/* SDGGML */
+class SDGGML : public RefCounted {
+    GDCLASS(SDGGML, RefCounted);
 
 private:
-    const char* model_version_to_str[] = {
-		"SD 1.x",
-		"SD 2.x",
-		"SDXL",
-		"SVD",
-		"SD3 2B",
-		"Flux Dev",
-		"Flux Schnell"};
-    
     SDModel *receiver;
     StringName method;
 
@@ -111,16 +85,15 @@ public:
     bool use_tiny_autoencoder = false;
     std::shared_ptr<TinyAutoEncoder> tae_first_stage;
 
-    StableDiffusionGGML(int n_threads, rng_type_t rng_type, 
-                        ggml_backend_t backend,
-                        SDModel *receiver, const StringName &method);
-    ~StableDiffusionGGML();
+    SDGGML(int n_threads, rng_type_t rng_type, 
+            ggml_backend_t backend,
+            SDModel *receiver, const StringName &method);
+    ~SDGGML();
 
     /* Helper */
     void printlog(String out_log);
 
     bool is_using_v_parameterization_for_sd2(ggml_context* work_ctx);
-    void calculate_alphas_cumprod(float* alphas_cumprod, float linear_start, float linear_end, int timesteps);
 
     /* Model */
     bool load_from_file(String str_model_path,
@@ -158,7 +131,7 @@ public:
                         float min_cfg,
                         float cfg_scale,
                         float guidance,
-                        sample_method_t method,
+                        Scheduler method,
                         const std::vector<float>& sigmas,
                         int start_merge_step,
                         SDCondition id_cond);
@@ -173,25 +146,6 @@ public:
 class SDModel : public StableDiffusion {
 	GDCLASS(SDModel, StableDiffusion);
 private:
-    const char* model_version_to_str[] = {
-		"SD 1.x",
-		"SD 2.x",
-		"SDXL",
-		"SVD",
-		"SD3 2B",
-		"Flux Dev",
-		"Flux Schnell"};
-    const char* sampling_methods_str[] = {
-        "Euler A",
-        "Euler",
-        "Heun",
-        "DPM2",
-        "DPM++ (2s)",
-        "DPM++ (2M)",
-        "modified DPM++ (2M)",
-        "iPNDM",
-        "iPNDM_v",
-        "LCM"};
 	SDVersion version;
 	String model_path;
     Scheduler schedule;
@@ -200,7 +154,7 @@ protected:
 	static void _bind_methods();
 
 public:
-    Ref<StableDiffusionGGML> sd = nullptr;
+    Ref<SDGGML> sd = nullptr;
 
     SDModel();
 	~SDModel();

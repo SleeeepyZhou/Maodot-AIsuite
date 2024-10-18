@@ -1,4 +1,5 @@
 #include "ai_object.h"
+#include "deviceinfo.h"
 
 AIResource::AIResource() {
 }

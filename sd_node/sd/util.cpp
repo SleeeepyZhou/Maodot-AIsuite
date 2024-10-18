@@ -363,22 +363,7 @@ void* sd_log_cb_data         = NULL;
 #define LOG_BUFFER_SIZE 1024
 
 void log_printf(sd_log_level_t level, const char* file, int line, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-
-    static char log_buffer[LOG_BUFFER_SIZE + 1];
-    int written = snprintf(log_buffer, LOG_BUFFER_SIZE, "%s:%-4d - ", sd_basename(file).c_str(), line);
-
-    if (written >= 0 && written < LOG_BUFFER_SIZE) {
-        vsnprintf(log_buffer + written, LOG_BUFFER_SIZE - written, format, args);
-    }
-    strncat(log_buffer, "\n", LOG_BUFFER_SIZE - strlen(log_buffer));
-
-    if (sd_log_cb) {
-        sd_log_cb(level, log_buffer, sd_log_cb_data);
-    }
-
-    va_end(args);
+    
 }
 
 void sd_set_log_callback(sd_log_cb_t cb, void* data) {

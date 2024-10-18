@@ -16,6 +16,7 @@ public:
     int get_core_count() const { return physical_Core; };
     const Array get_available_devices() const { return vk_available_devices;};
     const Array get_devices_idx() const { return vk_devices_idx;};
+    void get_vk_available_devices();
 
 private:
     DeviceInfo();
@@ -25,7 +26,6 @@ private:
     static Array vk_available_devices;
     static Array vk_devices_idx;
 
-    Array get_vk_available_devices();
 };
 
 
