@@ -3,8 +3,6 @@
 #ifndef LORA_LOADER_H
 #define LORA_LOADER_H
 
-#include "stablediffusion.h"
-
 /*
 class LoraLoader : public StableDiffusion {
 	GDCLASS(LoraLoader, StableDiffusion);

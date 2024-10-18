@@ -123,7 +123,7 @@ void SDControl::text_encoders(SDModel model_node, Latent latent ,
     struct ggml_context* work_ctx = latent.get_work_ctx();
     int64_t t0 = ggml_time_ms();
     SDCondition cond = sd->cond_stage_model->get_learned_condition(work_ctx,
-                                                            n_threads,
+                                                            get_n_threads(),
                                                             prompt,
                                                             clip_skip,
                                                             width,
@@ -134,7 +134,7 @@ void SDControl::text_encoders(SDModel model_node, Latent latent ,
         force_zero_embeddings = true;
     }
     SDCondition uncond = sd->cond_stage_model->get_learned_condition(work_ctx,
-                                                                n_threads,
+                                                                get_n_threads(),
                                                                 negative_prompt,
                                                                 clip_skip,
                                                                 width,

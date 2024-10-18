@@ -5,8 +5,10 @@
 
 #include "stablediffusion.h"
 #include "ggml_extend.hpp"
+#include "util.h"
 
-class StableDiffusion;
+struct ggml_tensor;
+struct ggml_context;
 
 /* Latent */
 class Latent : public StableDiffusion {
@@ -49,6 +51,6 @@ public:
     std::vector<struct ggml_tensor*> get_final_latents() const;
 
     void free_work_ctx();
-}
+};
 
 #endif // LATENT_H

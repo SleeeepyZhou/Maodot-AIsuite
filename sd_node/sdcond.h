@@ -5,9 +5,8 @@
 
 #include "stablediffusion.h"
 #include "sdmodel.h"
-
-class SDResource;
-class StableDiffusion;
+#include "conditioner.hpp"
+#include "latent.h"
 
 class SDCond : public SDResource {
 	GDCLASS(SDCond, SDResource);
@@ -20,6 +19,7 @@ protected:
 	static void _bind_methods();
 
 public:
+    SDCond() = default;
     SDCond(SDCondition cond, SDCondition uncond);
     ~SDCond();
 
@@ -31,7 +31,7 @@ class SDControl : public StableDiffusion {
 	GDCLASS(SDControl, StableDiffusion);
 
 private:
-    SDCond sdcond = nullptr;
+    SDCond sdcond;
 
 protected:
     static void _bind_methods();
@@ -43,6 +43,6 @@ public:
 	void text_encoders(SDModel model_node, Latent latent, 
                        String prompt, String negative_prompt, 
                        int clip_skip);
-}
+};
 
 #endif // COND_H

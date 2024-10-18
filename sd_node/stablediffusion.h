@@ -19,6 +19,7 @@ public:
 class StableDiffusion : public AIObject {
 	GDCLASS(StableDiffusion, AIObject);
 
+private:
 	int n_threads = -1;
 
 protected:

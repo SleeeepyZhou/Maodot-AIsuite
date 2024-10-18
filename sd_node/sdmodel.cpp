@@ -22,6 +22,10 @@
 #include "vae.hpp"
 
 #include "sdmodel.h"
+#include "latent.h"
+#include "sdcond.h"
+#include "stablediffusion.h"
+#include "deviceinfo.h"
 
 SDGGML::SDGGML(int n_threads, 
             rng_type_t rng_type, 
@@ -86,8 +90,10 @@ bool SDGGML::is_using_v_parameterization_for_sd2(ggml_context* work_ctx) {
         LOG_DEBUG("check is_using_v_parameterization_for_sd2, taking %.2fs", (t1 - t0) * 1.0f / 1000);
         return result < -1;
     }
-void calculate_alphas_cumprod(float *alphas_cumprod, float linear_start, 
-                                                   float linear_end, int timesteps)  {
+void calculate_alphas_cumprod(float* alphas_cumprod,
+                              float linear_start = 0.00085f,
+                              float linear_end   = 0.0120,
+                              int timesteps      = TIMESTEPS)  {
         float ls_sqrt = sqrtf(linear_start);
         float le_sqrt = sqrtf(linear_end);
         float amount  = le_sqrt - ls_sqrt;
@@ -206,12 +212,12 @@ bool SDGGML::load_from_file(String str_model_path,
                 WARN_PRINT(vformat(
                     "### It looks like you are using SDXL model. ###"
                     "If you find that the generated images are completely black, "
-                    "try specifying SDXL VAE FP16 Fix. You can find it here: "))
+                    "try specifying SDXL VAE FP16 Fix. You can find it here: "));
                 print_line_rich("[url=https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/blob/main/sdxl_vae.safetensors]sdxl_vae.safetensors[/url]");
             }
             printlog(vformat("Version: %s ", model_version_to_str[version]));
         } else if (version == VERSION_COUNT) {
-            ERR_PRINT(vformat("It looks like there no diffusion model."))
+            ERR_PRINT(vformat("It looks like there no diffusion model."));
         }
         bool use_t5xxl = false;
         if (version == VERSION_SD3_2B || version == VERSION_FLUX_DEV || version == VERSION_FLUX_SCHNELL) {
@@ -962,7 +968,7 @@ void SDModel::load_model(String str_model_path, int device_index, Scheduler sche
         emit_signal(SNAME("load_log"), result);
         return;
     }
-	sd = new SDGGML(n_threads, 
+	sd = new SDGGML(get_n_threads(), 
                 STD_DEFAULT_RNG, 
                 backend,
                 this, "printlog");
@@ -999,7 +1005,7 @@ void SDModel::ksample(Latent init_latent, SDCond cond_res,
         ERR_PRINT(vformat("No model is loaded."));
         return;
     }
-    Array latent_info = latent.get_latent_info();
+    Array latent_info = init_latent.get_latent_info();
     if (!latent_info[0]) { 
         ERR_PRINT(vformat("No latent."));
         return;
@@ -1007,7 +1013,7 @@ void SDModel::ksample(Latent init_latent, SDCond cond_res,
     int width = latent_info[1];
     int height = latent_info[2];
     int batch_count = latent_info[3];
-    struct ggml_context* work_ctx = latent.get_work_ctx();
+    struct ggml_context*  = init_latent.get_work_ctx();
 
     SDCondition cond = cond_res.get_cond();
     SDCondition uncond = cond_res.get_uncond();
